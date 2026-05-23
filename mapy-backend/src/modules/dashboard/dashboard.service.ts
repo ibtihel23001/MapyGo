@@ -221,8 +221,9 @@ export async function getSuperAdminStats() {
       revenueThisMonth: Number(revenueThisMonth._sum.amount ?? 0),
     },
     agenciesByStatus: agenciesByStatus.reduce(
-      (acc, g) => ({ ...acc, [g.status]: g._count.status }),
-      {} as Record<string, number>,
+      (acc: Record<string, number>, g: { status: string; _count: { status: number } }) =>
+    ({ ...acc, [g.status]: g._count.status }),
+  {} as Record<string, number>,
     ),
     recentAgencies,
     platformRevenueChart,
