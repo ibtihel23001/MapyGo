@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://mapygo-production.up.railway.app/:path*"
+      "destination": "https://mapygo-production.up.railway.app/api/:path*"
     }
   ]
 }
