@@ -5,6 +5,8 @@ import { getPagination, buildMeta } from '../../utils/paginate';
 import { sendMail, registrationApprovedTemplate } from '../../config/mailer';
 import { env } from '../../config/env';
 import type { CreateRegistrationInput, ReviewRegistrationInput } from './registrations.schema';
+import { PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -80,7 +82,7 @@ export async function reviewRegistration(
   if (input.status === 'approved') {
     const slug = slugify(reg.agencyName);
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Create the agency
       const agency = await tx.agency.create({
         data: {
