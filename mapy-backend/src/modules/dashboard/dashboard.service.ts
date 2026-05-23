@@ -78,12 +78,12 @@ export async function getAdminStats(agencyId: number) {
     // Revenue chart — last 6 months
     prisma.$queryRaw<{ month: string; total: number }[]>`
       SELECT
-        DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-        CAST(SUM(amount) AS DECIMAL(12,2))     AS total
+        TO_CHAR(transaction_date, 'YYYY-MM') AS month,
+        SUM(amount)::numeric(12,2)     AS total
       FROM transactions
       WHERE agency_id = ${agencyId}
         AND type = 'revenue'
-        AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        AND transaction_date >= CURRENT_DATE - INTERVAL '6 months'
       GROUP BY month
       ORDER BY month ASC
     `,
@@ -198,11 +198,11 @@ export async function getSuperAdminStats() {
 
     prisma.$queryRaw<{ month: string; total: number }[]>`
       SELECT
-        DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-        CAST(SUM(amount) AS DECIMAL(12,2))     AS total
+        TO_CHAR(transaction_date, 'YYYY-MM') AS month,
+        SUM(amount)::numeric(12,2)     AS total
       FROM transactions
       WHERE type = 'revenue'
-        AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        AND transaction_date >= CURRENT_DATE - INTERVAL '6 months'
       GROUP BY month
       ORDER BY month ASC
     `,
@@ -268,12 +268,12 @@ export async function getAccountantStats(agencyId: number) {
 
     prisma.$queryRaw<{ month: string; revenue: number; expenses: number }[]>`
       SELECT
-        DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-        CAST(SUM(CASE WHEN type = 'revenue' THEN amount ELSE 0 END) AS DECIMAL(12,2)) AS revenue,
-        CAST(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS DECIMAL(12,2)) AS expenses
+        TO_CHAR(transaction_date, 'YYYY-MM') AS month,
+        SUM(CASE WHEN type = 'revenue' THEN amount ELSE 0 END)::numeric(12,2) AS revenue,
+        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END)::numeric(12,2) AS expenses
       FROM transactions
       WHERE agency_id = ${agencyId}
-        AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        AND transaction_date >= CURRENT_DATE - INTERVAL '6 months'
       GROUP BY month
       ORDER BY month ASC
     `,
