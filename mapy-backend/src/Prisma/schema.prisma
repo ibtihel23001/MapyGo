@@ -1,0 +1,368 @@
+// ============================================================
+// Prisma Schema — Travel Agency SaaS
+// Run: npx prisma db push   (apply to existing DB)
+//  or: npx prisma migrate dev --name init  (fresh migration)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Roles ───────────────────────────────────────────────────
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(50)
+  slug        String   @unique @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users User[]
+
+  @@map("roles")
+}
+
+// ─── Users ───────────────────────────────────────────────────
+model User {
+  id               Int       @id @default(autoincrement())
+  roleId           Int       @map("role_id")
+  agencyId         Int?      @map("agency_id")
+  username         String    @unique @db.VarChar(100)
+  email            String    @unique @db.VarChar(150)
+  password         String    @db.VarChar(255)
+  firstName        String    @map("first_name") @db.VarChar(100)
+  lastName         String    @map("last_name") @db.VarChar(100)
+  phone            String?   @db.VarChar(30)
+  avatar           String?   @db.VarChar(255)
+  isActive         Boolean   @default(true) @map("is_active")
+  emailVerified    Boolean   @default(false) @map("email_verified")
+  emailVerifyToken String?   @map("email_verify_token") @db.VarChar(255)
+  resetToken       String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+  lastLogin        DateTime? @map("last_login")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  role   Role    @relation(fields: [roleId], references: [id])
+  agency Agency? @relation(fields: [agencyId], references: [id])
+
+  requestedRefunds  Refund[]       @relation("RequestedBy")
+  processedRefunds  Refund[]       @relation("ProcessedBy")
+  createdTransactions Transaction[] @relation("CreatedBy")
+  createdSubs       Subscription[] @relation("CreatedBy")
+  activityLogs      ActivityLog[]
+  notifications     Notification[]
+  generatedReports  Report[]
+
+  @@map("users")
+}
+
+// ─── Agencies ────────────────────────────────────────────────
+model Agency {
+  id             Int          @id @default(autoincrement())
+  name           String       @db.VarChar(200)
+  slug           String       @unique @db.VarChar(200)
+  email          String       @db.VarChar(150)
+  phone          String?      @db.VarChar(30)
+  address        String?      @db.Text
+  city           String?      @db.VarChar(100)
+  country        String?      @db.VarChar(100)
+  logo           String?      @db.VarChar(255)
+  website        String?      @db.VarChar(255)
+  licenseNumber  String?      @map("license_number") @db.VarChar(100)
+  status         AgencyStatus @default(pending)
+  registeredBy   Int?         @map("registered_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  users         User[]
+  subscriptions Subscription[]
+  tickets       Ticket[]
+  refunds       Refund[]
+  transactions  Transaction[]
+  apiConfig     AgencyApiConfig?
+  sellers       Seller[]
+  clients       Client[]
+  notifications Notification[]
+  reports       Report[]
+
+  @@map("agencies")
+}
+
+enum AgencyStatus {
+  pending
+  active
+  suspended
+  inactive
+}
+
+// ─── Subscriptions ───────────────────────────────────────────
+model Subscription {
+  id               Int                @id @default(autoincrement())
+  agencyId         Int                @map("agency_id")
+  planName         String             @default("Annual Plan") @map("plan_name") @db.VarChar(100)
+  price            Decimal            @default(0.00) @db.Decimal(10, 2)
+  currency         String             @default("USD") @db.VarChar(10)
+  startDate        DateTime           @map("start_date") @db.Date
+  endDate          DateTime           @map("end_date") @db.Date
+  status           SubscriptionStatus @default(active)
+  paymentMethod    String?            @map("payment_method") @db.VarChar(100)
+  paymentReference String?            @map("payment_reference") @db.VarChar(255)
+  notes            String?            @db.Text
+  createdById      Int?               @map("created_by")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  agency    Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  cancelled
+  pending
+}
+
+// ─── Tickets ─────────────────────────────────────────────────
+model Ticket {
+  id              Int          @id @default(autoincrement())
+  agencyId        Int          @map("agency_id")
+  ticketNumber    String       @unique @map("ticket_number") @db.VarChar(50)
+  pnr             String?      @db.VarChar(20)
+  passengerName   String       @map("passenger_name") @db.VarChar(200)
+  passengerEmail  String?      @map("passenger_email") @db.VarChar(150)
+  passengerPhone  String?      @map("passenger_phone") @db.VarChar(30)
+  origin          String?      @db.VarChar(100)
+  destination     String?      @db.VarChar(100)
+  departureDate   DateTime?    @map("departure_date") @db.Date
+  returnDate      DateTime?    @map("return_date") @db.Date
+  airline         String?      @db.VarChar(100)
+  flightNumber    String?      @map("flight_number") @db.VarChar(50)
+  ticketClass     String?      @map("ticket_class") @db.VarChar(50)
+  fare            Decimal?     @db.Decimal(10, 2)
+  taxes           Decimal?     @db.Decimal(10, 2)
+  fees            Decimal?     @db.Decimal(10, 2)
+  totalAmount     Decimal?     @map("total_amount") @db.Decimal(10, 2)
+  currency        String?      @default("USD") @db.VarChar(10)
+  status          TicketStatus @default(pending)
+  sellerName      String?      @map("seller_name") @db.VarChar(150)
+  clientName      String?      @map("client_name") @db.VarChar(150)
+  rawEmailData    String?      @map("raw_email_data") @db.LongText
+  amadeusData     Json?        @map("amadeus_data")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  refunds      Refund[]
+  transactions Transaction[]
+
+  @@map("tickets")
+}
+
+enum TicketStatus {
+  pending
+  issued
+  cancelled
+  refunded
+  used
+}
+
+// ─── Refunds ─────────────────────────────────────────────────
+model Refund {
+  id            Int          @id @default(autoincrement())
+  agencyId      Int          @map("agency_id")
+  ticketId      Int?         @map("ticket_id")
+  ticketNumber  String?      @map("ticket_number") @db.VarChar(50)
+  passengerName String       @map("passenger_name") @db.VarChar(200)
+  reason        String       @db.Text
+  refundAmount  Decimal      @map("refund_amount") @db.Decimal(10, 2)
+  currency      String?      @default("USD") @db.VarChar(10)
+  status        RefundStatus @default(pending)
+  requestedById Int?         @map("requested_by")
+  processedById Int?         @map("processed_by")
+  processedAt   DateTime?    @map("processed_at")
+  notes         String?      @db.Text
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  agency      Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  ticket      Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  requestedBy User?   @relation("RequestedBy", fields: [requestedById], references: [id])
+  processedBy User?   @relation("ProcessedBy", fields: [processedById], references: [id])
+
+  transactions Transaction[]
+
+  @@map("refunds")
+}
+
+enum RefundStatus {
+  pending
+  approved
+  rejected
+  processed
+}
+
+// ─── Transactions ────────────────────────────────────────────
+model Transaction {
+  id              Int             @id @default(autoincrement())
+  agencyId        Int             @map("agency_id")
+  type            TransactionType
+  category        String?         @db.VarChar(100)
+  description     String          @db.Text
+  amount          Decimal         @db.Decimal(10, 2)
+  currency        String          @default("USD") @db.VarChar(10)
+  reference       String?         @db.VarChar(255)
+  ticketId        Int?            @map("ticket_id")
+  refundId        Int?            @map("refund_id")
+  createdById     Int?            @map("created_by")
+  transactionDate DateTime        @map("transaction_date") @db.Date
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  agency    Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  ticket    Ticket? @relation(fields: [ticketId], references: [id])
+  refund    Refund? @relation(fields: [refundId], references: [id])
+  createdBy User?   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  revenue
+  expense
+  refund
+  commission
+}
+
+// ─── Agency API Config ────────────────────────────────────────
+model AgencyApiConfig {
+  id           Int       @id @default(autoincrement())
+  agencyId     Int       @unique @map("agency_id")
+  emailAddress String    @map("email_address") @db.VarChar(150)
+  emailPassword String   @map("email_password") @db.VarChar(255)
+  imapHost     String    @default("imap.gmail.com") @map("imap_host") @db.VarChar(255)
+  imapPort     Int       @default(993) @map("imap_port")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastSync     DateTime? @map("last_sync")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@map("agency_api_config")
+}
+
+// ─── Sellers ─────────────────────────────────────────────────
+model Seller {
+  id        Int      @id @default(autoincrement())
+  agencyId  Int      @map("agency_id")
+  name      String   @db.VarChar(200)
+  email     String?  @db.VarChar(150)
+  phone     String?  @db.VarChar(30)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@map("sellers")
+}
+
+// ─── Clients ─────────────────────────────────────────────────
+model Client {
+  id             Int      @id @default(autoincrement())
+  agencyId       Int      @map("agency_id")
+  name           String   @db.VarChar(200)
+  email          String?  @db.VarChar(150)
+  phone          String?  @db.VarChar(30)
+  passportNumber String?  @map("passport_number") @db.VarChar(50)
+  nationality    String?  @db.VarChar(100)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@map("clients")
+}
+
+// ─── Notifications ───────────────────────────────────────────
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  agencyId  Int?     @map("agency_id")
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  link      String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?   @relation(fields: [userId], references: [id])
+  agency Agency? @relation(fields: [agencyId], references: [id])
+
+  @@map("notifications")
+}
+
+// ─── Activity Logs ───────────────────────────────────────────
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  agencyId    Int?     @map("agency_id")
+  action      String   @db.VarChar(100)
+  description String?  @db.Text
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("activity_logs")
+}
+
+// ─── Agency Registrations ────────────────────────────────────
+model AgencyRegistration {
+  id            Int                @id @default(autoincrement())
+  agencyName    String             @map("agency_name") @db.VarChar(200)
+  contactName   String             @map("contact_name") @db.VarChar(200)
+  email         String             @db.VarChar(150)
+  phone         String?            @db.VarChar(30)
+  address       String?            @db.Text
+  city          String?            @db.VarChar(100)
+  country       String?            @db.VarChar(100)
+  licenseNumber String?            @map("license_number") @db.VarChar(100)
+  message       String?            @db.Text
+  status        RegistrationStatus @default(pending)
+  reviewedBy    Int?               @map("reviewed_by")
+  reviewedAt    DateTime?          @map("reviewed_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  @@map("agency_registrations")
+}
+
+enum RegistrationStatus {
+  pending
+  approved
+  rejected
+}
+
+// ─── Reports ─────────────────────────────────────────────────
+model Report {
+  id          Int      @id @default(autoincrement())
+  agencyId    Int      @map("agency_id")
+  type        String   @db.VarChar(50)
+  title       String   @db.VarChar(255)
+  periodStart DateTime? @map("period_start") @db.Date
+  periodEnd   DateTime? @map("period_end") @db.Date
+  filePath    String?  @map("file_path") @db.VarChar(255)
+  generatedBy Int?     @map("generated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agency    Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  generator User?  @relation(fields: [generatedBy], references: [id])
+
+  @@map("reports")
+}
