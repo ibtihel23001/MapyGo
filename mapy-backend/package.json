@@ -15,6 +15,7 @@
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "prisma": {
+    "schema": "src/Prisma/schema.prisma",
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
