@@ -27,6 +27,9 @@ import reportRoutes       from './modules/reports/reports.routes';
 import dashboardRoutes    from './modules/dashboard/dashboard.routes';
 
 const app = express();
+app.set('trust proxy', 1);
+app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 
 // ─── Security & parsing ───────────────────────────────────────
 app.use(helmet());
