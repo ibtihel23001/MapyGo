@@ -66,24 +66,44 @@ export async function reviewRegistration(
 ) {
   const reg = await prisma.agencyRegistration.findUnique({ where: { id } });
   if (!reg) throw createError('Registration not found', 404);
-  if (reg.status !== 'pending') throw createError('This registration has already been reviewed', 400);
+  if (reg.status !== 'pending') {
+    // Allow re-processing if it was "approved" but the agency was never actually created
+    if (reg.status === 'approved' && input.status === 'approved') {
+      const agencyExists = await prisma.agency.findFirst({ where: { email: reg.email } });
+      if (agencyExists) throw createError('This registration has already been reviewed', 400);
+      // Fall through — agency is missing, re-create it
+    } else {
+      throw createError('This registration has already been reviewed', 400);
+    }
+  }
 
-  // Mark reviewed first
-  const updated = await prisma.agencyRegistration.update({
-    where: { id },
-    data: {
-      status: input.status,
-      reviewedBy: reviewedById,
-      reviewedAt: new Date(),
-    },
-  });
+  // Pre-validate the admin role exists before starting any transaction
+  const adminRole = await prisma.role.findUnique({ where: { slug: 'admin' } });
+  if (input.status === 'approved' && !adminRole) {
+    throw createError('Admin role not found in database. Run the seed script first.', 500);
+  }
 
-  // On approval: create Agency + Admin user in a transaction
   if (input.status === 'approved') {
+    // Do everything atomically: mark registration approved + create agency + create user
+    // If ANY step fails, nothing is committed — registration stays 'pending'
     const slug = slugify(reg.agencyName);
+    const adminEmail = input.adminEmail ?? reg.email;
+    const adminPassword = input.adminPassword ?? 'Admin@1234';
+    const hashed = await bcrypt.hash(adminPassword, 12);
+    const baseUsername = slug.replace(/-/g, '').slice(0, 15) + '_admin';
 
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Create the agency
+    const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 1. Mark the registration as approved
+      const updatedReg = await tx.agencyRegistration.update({
+        where: { id },
+        data: {
+          status: 'approved',
+          reviewedBy: reviewedById,
+          reviewedAt: new Date(),
+        },
+      });
+
+      // 2. Create the agency
       const agency = await tx.agency.create({
         data: {
           name: reg.agencyName,
@@ -99,18 +119,10 @@ export async function reviewRegistration(
         },
       });
 
-      // Create admin user for the agency
-      const adminRole = await tx.role.findUnique({ where: { slug: 'admin' } });
-      if (!adminRole) throw new Error('Admin role not found in DB');
-
-      const adminEmail = input.adminEmail ?? reg.email;
-      const adminPassword = input.adminPassword ?? 'Admin@1234'; // agency should change on first login
-      const hashed = await bcrypt.hash(adminPassword, 12);
-      const baseUsername = slug.replace(/-/g, '').slice(0, 15) + '_admin';
-
+      // 3. Create the agency admin user
       await tx.user.create({
         data: {
-          roleId: adminRole.id,
+          roleId: adminRole!.id,
           agencyId: agency.id,
           username: baseUsername,
           email: adminEmail,
@@ -122,18 +134,30 @@ export async function reviewRegistration(
         },
       });
 
-      // Send approval email
-      try {
-        await sendMail({
-          to: reg.email,
-          subject: `${reg.agencyName} — Your application has been approved!`,
-          html: registrationApprovedTemplate(reg.agencyName, `${env.CLIENT_URL}/login`),
-        });
-      } catch {
-        // Email failure shouldn't roll back the transaction
-      }
+      return updatedReg;
     });
+
+    // Send approval email outside the transaction (failure won't roll back the DB changes)
+    try {
+      await sendMail({
+        to: reg.email,
+        subject: `${reg.agencyName} — Your application has been approved!`,
+        html: registrationApprovedTemplate(reg.agencyName, `${env.CLIENT_URL}/login`),
+      });
+    } catch {
+      // Email failure is non-critical
+    }
+
+    return updated;
   }
 
-  return updated;
+  // For rejection: simple update, no transaction needed
+  return prisma.agencyRegistration.update({
+    where: { id },
+    data: {
+      status: 'rejected',
+      reviewedBy: reviewedById,
+      reviewedAt: new Date(),
+    },
+  });
 }
