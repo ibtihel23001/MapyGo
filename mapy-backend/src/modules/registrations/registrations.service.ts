@@ -101,7 +101,10 @@ export async function reviewRegistration(
     // Pre-validate the admin role exists before starting any transaction
     const adminRole = await prisma.role.findUnique({ where: { slug: 'admin' } });
     if (!adminRole) {
-      throw createError('Admin role not found in database. Run the seed script first.', 500);
+      throw createError(
+        'Admin role not found in the database. Please run the seed script (npx prisma db seed) on the Railway server first.',
+        500,
+      );
     }
 
     // Check admin email isn't already taken by another user
@@ -123,10 +126,8 @@ export async function reviewRegistration(
     const adminPassword = input.adminPassword?.trim() || 'Admin@1234';
     const hashed = await bcrypt.hash(adminPassword, 12);
 
-    let updated: Prisma.AgencyRegistrationGetPayload<{}>;
-
     try {
-      updated = await prisma.$transaction(async (tx) => {
+      const updated = await prisma.$transaction(async (tx) => {
         // 1. Mark the registration as approved
         const updatedReg = await tx.agencyRegistration.update({
           where: { id },
@@ -170,6 +171,20 @@ export async function reviewRegistration(
 
         return updatedReg;
       });
+
+      // Send approval email outside the transaction (failure won't roll back DB changes)
+      try {
+        await sendMail({
+          to: reg.email,
+          subject: `${reg.agencyName} — Your application has been approved!`,
+          html: registrationApprovedTemplate(reg.agencyName, `${env.CLIENT_URL}/login`),
+        });
+      } catch (mailErr) {
+        // Email failure is non-critical — log it but don't fail the request
+        console.warn('⚠️  Approval email failed (non-critical):', mailErr);
+      }
+
+      return updated;
     } catch (err: any) {
       // Prisma unique-constraint violation — give a clear message instead of 500
       if (err?.code === 'P2002') {
@@ -179,21 +194,12 @@ export async function reviewRegistration(
           409,
         );
       }
-      throw err; // re-throw anything else
+      // Re-throw operational errors (ones we created with createError) as-is
+      if (err?.isOperational) throw err;
+      // Unknown errors — log and surface generically
+      console.error('❌ Unexpected error during registration approval:', err);
+      throw err;
     }
-
-    // Send approval email outside the transaction (failure won't roll back DB changes)
-    try {
-      await sendMail({
-        to: reg.email,
-        subject: `${reg.agencyName} — Your application has been approved!`,
-        html: registrationApprovedTemplate(reg.agencyName, `${env.CLIENT_URL}/login`),
-      });
-    } catch {
-      // Email failure is non-critical
-    }
-
-    return updated;
   }
 
   // Rejection: simple update, no transaction needed
