@@ -24,14 +24,17 @@ export function errorHandler(
   }
 
   const statusCode = err.statusCode ?? 500;
+  // Always show the real message for operational errors (ones we threw intentionally).
+  // For unexpected errors, show the message in dev and a generic string in prod.
   const message = err.isOperational
     ? err.message
     : env.NODE_ENV === 'development'
       ? err.message
       : 'Internal server error';
 
-  if (env.NODE_ENV === 'development') {
-    console.error('❌ Error:', err);
+  // Always log server errors so Railway logs capture them
+  if (statusCode >= 500) {
+    console.error('❌ Server error:', err);
   }
 
   res.status(statusCode).json({ success: false, message });
