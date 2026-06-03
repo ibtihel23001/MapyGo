@@ -18,8 +18,11 @@ const REFRESH_COOKIE = 'refreshToken';
 
 const cookieOptions = {
   httpOnly: true,
+  // In production the frontend (Vercel) and backend (Railway) are on different domains,
+  // so the cookie must be Secure + SameSite=None to travel cross-origin.
+  // In development both run on localhost so 'lax' is fine without HTTPS.
   secure: env.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
+  sameSite: (env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
 };
 
