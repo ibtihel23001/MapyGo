@@ -428,7 +428,13 @@ export function useReviewRegistration() {
           adminLastName,
         })
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['registrations'] }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['registrations'] })
+      // Approval creates a new agency — keep agencies list in sync
+      if (variables.status === 'approved') {
+        qc.invalidateQueries({ queryKey: ['agencies'] })
+      }
+    },
   })
 }
 
@@ -495,8 +501,37 @@ export function useTicket(id: number) {
 export function useUpdateRegistration() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, status }: { id: number; status: 'approved' | 'rejected' }) =>
-      api.patch(`/registrations/${id}/review`, { status }).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['registrations'] }),
+    mutationFn: ({
+      id,
+      status,
+      adminEmail,
+      adminPassword,
+      adminFirstName,
+      adminLastName,
+    }: {
+      id: number
+      status: 'approved' | 'rejected'
+      adminEmail?: string
+      adminPassword?: string
+      adminFirstName?: string
+      adminLastName?: string
+    }) =>
+      api
+        .patch(`/registrations/${id}/review`, {
+          status,
+          adminEmail,
+          adminPassword,
+          adminFirstName,
+          adminLastName,
+        })
+        .then((r) => r.data),
+    onSuccess: (_data, variables) => {
+      // Always refresh registrations list
+      qc.invalidateQueries({ queryKey: ['registrations'] })
+      // When approved, the backend creates a new agency — refresh agencies list too
+      if (variables.status === 'approved') {
+        qc.invalidateQueries({ queryKey: ['agencies'] })
+      }
+    },
   })
 }
