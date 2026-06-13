@@ -23,7 +23,7 @@ export async function listTickets(query: any, userId: number, agencyId: number |
         { ticketNumber: { contains: search } },
         { passengerName: { contains: search } },
         { pnr: { contains: search } },
-        { airline: { contains: search } },
+
       ],
     } : {}),
   };
@@ -53,29 +53,35 @@ export async function getTicket(id: number, agencyId: number | null, roleSlug: s
 export async function createTicket(input: CreateTicketInput, agencyId: number) {
   const existing = await prisma.ticket.findUnique({ where: { ticketNumber: input.ticketNumber } });
   if (existing) throw createError('Ticket number already exists', 409);
-
   return prisma.ticket.create({
     data: {
       ...input,
       agencyId,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
-      returnDate: input.returnDate ? new Date(input.returnDate) : undefined,
+      arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
+      dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
+      airFare: input.airFare,
+      ttc: input.ttc,
     },
   });
 }
 
+
 export async function updateTicket(id: number, input: UpdateTicketInput, agencyId: number | null, roleSlug: string) {
   await getTicket(id, agencyId, roleSlug);
-
   return prisma.ticket.update({
     where: { id },
     data: {
       ...input,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
-      returnDate: input.returnDate ? new Date(input.returnDate) : undefined,
+      arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
+      dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
+      airFare: input.airFare,
+      ttc: input.ttc,
     },
   });
 }
+
 
 export async function updateTicketStatus(id: number, input: UpdateTicketStatusInput, agencyId: number | null, roleSlug: string) {
   await getTicket(id, agencyId, roleSlug);

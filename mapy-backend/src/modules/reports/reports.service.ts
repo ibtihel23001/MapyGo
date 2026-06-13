@@ -37,7 +37,7 @@ export async function generateReport(
 
   switch (input.type) {
     case 'tickets': {
-      const [total, byStatus, byAirline] = await Promise.all([
+      const [total, byStatus, byStatusBreakdown] = await Promise.all([
         prisma.ticket.count({ where: { agencyId, ...dateFilter } }),
         prisma.ticket.groupBy({
           by: ['status'],
@@ -45,14 +45,14 @@ export async function generateReport(
           _count: { status: true },
         }),
         prisma.ticket.groupBy({
-          by: ['airline'],
+          by: ['status'],
           where: { agencyId, ...dateFilter },
-          _count: { airline: true },
-          orderBy: { _count: { airline: 'desc' } },
+          _count: { status: true },
+          orderBy: { _count: { status: 'desc' } },
           take: 10,
         }),
       ]);
-      reportData = { total, byStatus, topAirlines: byAirline };
+      reportData = { total, byStatus, byStatusBreakdown };
       break;
     }
 

@@ -17,7 +17,7 @@ export async function listRefunds(query: any, agencyId: number | null, roleSlug:
     prisma.refund.findMany({
       where, skip, take: perPage,
       orderBy: { createdAt: 'desc' },
-      include: { ticket: { select: { ticketNumber: true, airline: true } } },
+      include: { ticket: { select: { ticketNumber: true, passengerName: true } } },
     }),
   ]);
 
