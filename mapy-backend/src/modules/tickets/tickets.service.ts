@@ -13,17 +13,26 @@ export async function listTickets(query: any, userId: number, agencyId: number |
   const { page, perPage, skip } = getPagination(query);
   const search = query.search?.trim();
   const statusFilter = query.status;
+  const airlineFilter = query.airline?.trim();
+  const dateFrom = query.dateFrom;
+  const dateTo = query.dateTo;
   const isSuperAdmin = roleSlug === 'superadmin';
 
   const where: any = {
     ...agencyScope(agencyId, isSuperAdmin),
     ...(statusFilter ? { status: statusFilter } : {}),
+    ...(airlineFilter ? { airline: { contains: airlineFilter, mode: 'insensitive' } } : {}),
+    ...(dateFrom || dateTo ? {
+      departureDate: {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo   ? { lte: new Date(dateTo) }   : {}),
+      },
+    } : {}),
     ...(search ? {
       OR: [
-        { ticketNumber: { contains: search } },
-        { passengerName: { contains: search } },
-        { pnr: { contains: search } },
-        { airline: { contains: search } },
+        { ticketNumber: { contains: search, mode: 'insensitive' } },
+        { passengerName: { contains: search, mode: 'insensitive' } },
+        { pnr: { contains: search, mode: 'insensitive' } },
       ],
     } : {}),
   };
@@ -56,10 +65,16 @@ export async function createTicket(input: CreateTicketInput, agencyId: number) {
 
   return prisma.ticket.create({
     data: {
-      ...input,
       agencyId,
+      ticketNumber: input.ticketNumber,
+      pnr: input.pnr,
+      passengerName: input.passengerName,
+      dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
-      returnDate: input.returnDate ? new Date(input.returnDate) : undefined,
+      arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
+      airFare: input.airFare,
+      ttc: input.ttc,
+      status: 'pending',
     },
   });
 }
@@ -70,9 +85,14 @@ export async function updateTicket(id: number, input: UpdateTicketInput, agencyI
   return prisma.ticket.update({
     where: { id },
     data: {
-      ...input,
-      departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
-      returnDate: input.returnDate ? new Date(input.returnDate) : undefined,
+      ...(input.ticketNumber !== undefined ? { ticketNumber: input.ticketNumber } : {}),
+      ...(input.pnr           !== undefined ? { pnr:           input.pnr           } : {}),
+      ...(input.passengerName !== undefined ? { passengerName: input.passengerName } : {}),
+      ...(input.dateOfIssue   !== undefined ? { dateOfIssue:   new Date(input.dateOfIssue!) } : {}),
+      ...(input.departureDate !== undefined ? { departureDate: new Date(input.departureDate!) } : {}),
+      ...(input.arrivalDate   !== undefined ? { arrivalDate:   new Date(input.arrivalDate!)   } : {}),
+      ...(input.airFare       !== undefined ? { airFare:       input.airFare       } : {}),
+      ...(input.ttc           !== undefined ? { ttc:           input.ttc           } : {}),
     },
   });
 }
@@ -85,4 +105,56 @@ export async function updateTicketStatus(id: number, input: UpdateTicketStatusIn
 export async function deleteTicket(id: number, agencyId: number | null, roleSlug: string) {
   await getTicket(id, agencyId, roleSlug);
   await prisma.ticket.delete({ where: { id } });
+}
+
+/**
+ * Export all matching tickets as a CSV string.
+ * Uses same filter logic as listTickets but returns all rows (no pagination).
+ */
+export async function exportTicketsCsv(query: any, agencyId: number | null, roleSlug: string): Promise<string> {
+  const isSuperAdmin = roleSlug === 'superadmin';
+  const search = query.search?.trim();
+  const statusFilter = query.status;
+  const airlineFilter = query.airline?.trim();
+  const dateFrom = query.dateFrom;
+  const dateTo = query.dateTo;
+
+  const where: any = {
+    ...agencyScope(agencyId, isSuperAdmin),
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(airlineFilter ? { airline: { contains: airlineFilter, mode: 'insensitive' } } : {}),
+    ...(dateFrom || dateTo ? {
+      departureDate: {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo   ? { lte: new Date(dateTo) }   : {}),
+      },
+    } : {}),
+    ...(search ? {
+      OR: [
+        { ticketNumber: { contains: search, mode: 'insensitive' } },
+        { passengerName: { contains: search, mode: 'insensitive' } },
+        { pnr: { contains: search, mode: 'insensitive' } },
+      ],
+    } : {}),
+  };
+
+  const tickets = await prisma.ticket.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const header = 'Ticket Number,PNR,Passenger Name,Date of Issue,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
+  const rows = tickets.map((t) => [
+    t.ticketNumber,
+    t.pnr ?? '',
+    t.passengerName,
+    t.dateOfIssue   ? t.dateOfIssue.toISOString().slice(0, 10)   : '',
+    t.departureDate ? t.departureDate.toISOString().slice(0, 10) : '',
+    t.arrivalDate   ? t.arrivalDate.toISOString().slice(0, 10)   : '',
+    t.airFare != null ? Number(t.airFare).toFixed(2) : '',
+    t.ttc     != null ? Number(t.ttc).toFixed(2)     : '',
+    t.status,
+  ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+  return header + rows.join('\r\n');
 }
