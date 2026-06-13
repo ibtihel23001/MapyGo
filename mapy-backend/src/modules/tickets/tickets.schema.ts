@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 export const createTicketSchema = z.object({
-  ticketNumber: z.string().min(1),
-  pnr:          z.string().optional(),
+  ticketNumber:  z.string().min(1),
+  pnr:           z.string().optional(),
   passengerName: z.string().min(1),
+  airline:       z.string().optional(),
   dateOfIssue:   z.string().optional(),
   departureDate: z.string().optional(),
   arrivalDate:   z.string().optional(),
