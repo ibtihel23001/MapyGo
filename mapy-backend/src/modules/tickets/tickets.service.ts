@@ -144,7 +144,7 @@ export async function exportTicketsCsv(query: any, agencyId: number | null, role
   });
 
   const header = 'Ticket Number,PNR,Passenger Name,Date of Issue,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
-  const rows = tickets.map((t) => [
+  const rows = tickets.map((t: typeof tickets[number]) => [
     t.ticketNumber,
     t.pnr ?? '',
     t.passengerName,
