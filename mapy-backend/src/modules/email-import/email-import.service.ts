@@ -235,6 +235,7 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
           { from: 'noreply@turkish.com' },
           { from: 'eticket@qatarairways.com.qa' },
           { from: 'confirmation@amadeus.com' },  // ← your actual sender
+          { from: 'brenztravels@gmail.com' },  // ← your actual sender
           { from: 'amadeus.com' },               // ← catch all amadeus domains
           { from: 'eticket' },
           { subject: 'Electronic Ticket' },
