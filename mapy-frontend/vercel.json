@@ -1,17 +1,12 @@
-
 {
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "https://mapygo-production.up.railway.app/api/$1"
+      "source": "/api/:path*",
+      "destination": "https://mapygo-production.up.railway.app/api/:path*"
     },
     {
-      "src": "/assets/(.*)",
-      "dest": "/assets/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
