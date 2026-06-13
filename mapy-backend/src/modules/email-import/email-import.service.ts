@@ -2,7 +2,7 @@ import { ImapFlow } from 'imapflow';
 import prisma from '../../config/prisma';
 import { createError } from '../../middleware/errorHandler';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedPassenger {
   passengerName: string;
@@ -28,7 +28,7 @@ export interface ImportResult {
   tickets: Array<{ ticketNumber: string; passengerName: string }>;
 }
 
-// ─── HTML Parsing Helpers ────────────────────────────────────────────────────
+// ─── HTML Parsing Helpers ─────────────────────────────────────────────────────
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -62,11 +62,13 @@ function extractAmount(text: string, patterns: RegExp[]): number | null {
   return null;
 }
 
-// ─── Core Parser ─────────────────────────────────────────────────────────────
+// ─── Core Parser ──────────────────────────────────────────────────────────────
 
-export function parseEmailHtml(html: string): ParsedEmail {
+export function parseEmailHtml(html: string, subject?: string): ParsedEmail {
   const text = extractText(html);
 
+  // ── PNR ──
+  // Try body patterns first, then fall back to subject line
   const pnr = tryPatterns(text, [
     /Booking\s+ref(?:erence)?\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
     /PNR\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
@@ -74,34 +76,45 @@ export function parseEmailHtml(html: string): ParsedEmail {
     /Booking\s+Reference\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
     /\b([A-Z]{2,3}\/[A-Z0-9]{5,6})\b/,
     /\b([A-Z0-9]{6})\b(?=.*Booking)/,
-  ]);
+  ]) ?? (subject ? tryPatterns(subject, [
+    // e.g. "ZERROUG/ABDELMOUMEN 07JUL2026 ALG IST" — last 3-letter IATA code is destination
+    /\b([A-Z0-9]{6})\b/,
+  ]) : null);
+
   const cleanPnr = pnr?.includes('/') ? pnr.split('/').pop()! : pnr;
 
+  // ── Date of Issue ──
   const dateOfIssue = tryPatterns(text, [
     /Document\s+Issue\s+Date\s*[:\-]?\s*(\d{1,2}\s+\w+\s+\d{2,4})/i,
     /Ticketed\s+Date\s*[:\-]?\s*(\d{1,2}\s*\w+\s*\d{2,4})/i,
     /Issue\s+Date\s*[:\-]?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i,
+    /Date\s+d.?(?:émission|emission)\s*[:\-]?\s*(\d{1,2}[\s\/\-]\w+[\s\/\-]\d{2,4})/i,
   ]);
 
+  // ── Airline ──
   const airline = tryPatterns(text, [
     /Issuing\s+Airline\s*[:\-]?\s*([\w\s]+?)(?:\s{2,}|Ticket|\n)/i,
     /Operated\s+By\s+([\w\s]+?),\s*[A-Z]{2}\)/i,
-    /(Turkish Airlines|Qatar Airways|Air Algerie|Air France|Lufthansa|Emirates|Fly Dubai|Transavia|Tunisair|Royal Air Maroc)/i,
+    /(Turkish Airlines|Qatar Airways|Air Alg[eé]rie|Air France|Lufthansa|Emirates|Fly ?Dubai|Transavia|Tunisair|Royal Air Maroc|Amadeus)/i,
   ]);
 
+  // ── Departure / Arrival ──
   const depMatches = [...text.matchAll(/Departure\s+(\d{1,2}\s+\w+)/gi)];
   const arrMatches = [...text.matchAll(/Arrival\s+(\d{1,2}\s+\w+)/gi)];
 
   const firstDepartureDate = depMatches[0]?.[1] ?? null;
   const lastArrivalDate = arrMatches[arrMatches.length - 1]?.[1] ?? arrMatches[0]?.[1] ?? null;
 
+  // ── Passengers ──
+  // Strategy 1: ticket# followed by name with optional (ADT)
   const passengers: ParsedPassenger[] = [];
 
-  const passengerRowRe = /(\d{3}-\d{10})\s+([\w\s]+?)\s*\(ADT\)/gi;
+  // FIX: Made (ADT) optional — Amadeus emails may not include it
+  const passengerRowRe = /(\d{3}-\d{10})\s+([\w\/\s]+?)(?:\s*\(ADT\)|\s{3,}|$)/gim;
   let pm: RegExpExecArray | null;
   while ((pm = passengerRowRe.exec(text)) !== null) {
     const ticketNumber = pm[1].trim();
-    const passengerName = pm[2].trim();
+    const passengerName = pm[2].trim().replace(/\s+/g, ' ');
 
     const blockStart = text.indexOf(ticketNumber);
     const blockEnd = text.indexOf('Restrictions', blockStart);
@@ -116,19 +129,50 @@ export function parseEmailHtml(html: string): ParsedEmail {
       /Total\s+Amount\s+([\d,]+(?:\.\d+)?)/i,
     ]);
 
-    if (!passengers.find(p => p.ticketNumber === ticketNumber)) {
+    if (passengerName && !passengers.find(p => p.ticketNumber === ticketNumber)) {
       passengers.push({ passengerName, ticketNumber, airFare, ttc });
     }
   }
 
+  // Strategy 2: FIX — Amadeus format: NAME/FIRSTNAME [title] before or after ticket number
+  if (passengers.length === 0) {
+    // Pattern: "LASTNAME/FIRSTNAME MR 147-2433471701" or reversed
+    const amadeusFwdRe = /([A-Z]{2,}\/[A-Z\s]+?(?:\bMR\b|\bMRS\b|\bMS\b|\bMISS\b)?)\s+(\d{3}-\d{10})/gi;
+    const amadeusRevRe = /(\d{3}-\d{10})\s+([A-Z]{2,}\/[A-Z\s]+?(?:\bMR\b|\bMRS\b|\bMS\b|\bMISS\b)?)/gi;
+
+    for (const re of [amadeusFwdRe, amadeusRevRe]) {
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        const [ticketNumber, passengerName] = re === amadeusFwdRe
+          ? [m[2].trim(), m[1].trim()]
+          : [m[1].trim(), m[2].trim()];
+
+        const airFare = extractAmount(text, [/Air\s*Fare\s+(?:DZD\s*)?([\d,]+)/i]);
+        const ttc = extractAmount(text, [/Total\s+Amount\s+(?:DZD\s*)?([\d,]+)/i]);
+
+        if (!passengers.find(p => p.ticketNumber === ticketNumber)) {
+          passengers.push({ passengerName, ticketNumber, airFare, ttc });
+        }
+      }
+      if (passengers.length > 0) break;
+    }
+  }
+
+  // Strategy 3: fallback — just grab ticket numbers
   if (passengers.length === 0) {
     const simpleRe = /(\d{3}-\d{10})/g;
     const tNums: string[] = [];
     let sm: RegExpExecArray | null;
     while ((sm = simpleRe.exec(text)) !== null) tNums.push(sm[1]);
 
+    // Try to get name from subject ("ZERROUG/ABDELMOUMEN 07JUL2026 ALG IST")
+    const subjectNameMatch = subject?.match(/^(?:Fwd?:\s*)?([A-Z]+\/[A-Z\s]+?)\s+\d{2}[A-Z]{3}/i);
     const travelerMatch = text.match(/Traveler\s+([\w\s]+?)(?:\s{2,}|Ticket)/i);
-    const fallbackName = travelerMatch?.[1]?.trim() ?? 'Unknown';
+    const fallbackName =
+      subjectNameMatch?.[1]?.trim() ??
+      travelerMatch?.[1]?.trim() ??
+      'Unknown';
+
     const airFare = extractAmount(text, [/Air\s*Fare\s+(?:DZD\s*)?([\d,]+)/i]);
     const ttc = extractAmount(text, [/Total\s+Amount\s+(?:DZD\s*)?([\d,]+)/i]);
 
@@ -185,13 +229,19 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
       const since = new Date();
       since.setDate(since.getDate() - 90);
 
-      // Search for e-ticket emails
+      // FIX: Expanded search to match Amadeus / forwarded ticket emails
       const uids = await client.search({
         or: [
           { from: 'noreply@turkish.com' },
           { from: 'eticket@qatarairways.com.qa' },
+          { from: 'confirmation@amadeus.com' },  // ← your actual sender
+          { from: 'amadeus.com' },               // ← catch all amadeus domains
           { from: 'eticket' },
           { subject: 'Electronic Ticket' },
+          { subject: 'ALG' },                    // ← your route-based subjects
+          { subject: 'e-ticket' },
+          { subject: 'eticket' },
+          { subject: 'billet' },                 // ← French "ticket"
         ],
         since,
       });
@@ -205,7 +255,6 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
         try {
           if (!msg.source) continue;
           const raw = msg.source.toString('utf8');
-          // Extract HTML body from raw MIME
           const html = extractHtmlFromMime(raw);
           const subject = extractHeaderFromMime(raw, 'subject');
           if (html) {
@@ -227,20 +276,17 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
 
 /** Extract the first text/html part from a raw MIME message */
 function extractHtmlFromMime(raw: string): string {
-  // Look for text/html part boundary
-  const htmlMatch = raw.match(/Content-Type:\s*text\/html[^\r\n]*[\r\n]+(?:Content-[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?:--|\z)/i);
+  const htmlMatch = raw.match(/Content-Type:\s*text\/html[^\r\n]*[\r\n]+(?:Content-[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?:--|$)/i);
   if (htmlMatch?.[1]) {
     const body = htmlMatch[1].trim();
-    // Decode quoted-printable if needed
-    if (raw.includes('Content-Transfer-Encoding: quoted-printable')) {
+    if (raw.match(/Content-Transfer-Encoding:\s*quoted-printable/i)) {
       return decodeQuotedPrintable(body);
     }
-    if (raw.includes('Content-Transfer-Encoding: base64')) {
+    if (raw.match(/Content-Transfer-Encoding:\s*base64/i)) {
       try { return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf8'); } catch { return body; }
     }
     return body;
   }
-  // If no multipart, try the whole body
   const bodyStart = raw.indexOf('\r\n\r\n');
   return bodyStart >= 0 ? raw.slice(bodyStart + 4) : '';
 }
@@ -256,7 +302,7 @@ function decodeQuotedPrintable(input: string): string {
     .replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-// ─── Date parser ─────────────────────────────────────────────────────────────
+// ─── Date parser ──────────────────────────────────────────────────────────────
 
 function parseDateLoose(raw: string): Date | undefined {
   if (!raw) return undefined;
@@ -269,6 +315,7 @@ function parseDateLoose(raw: string): Date | undefined {
     const d = new Date(`${month} ${day}, ${fullYear}`);
     if (!isNaN(d.getTime())) return d;
   }
+  // Amadeus compact: 07JUL2026
   const compact = raw.match(/(\d{1,2})([A-Za-z]{3})(\d{2,4})/);
   if (compact) {
     const day = parseInt(compact[1]);
@@ -282,7 +329,7 @@ function parseDateLoose(raw: string): Date | undefined {
   return isNaN(d.getTime()) ? undefined : d;
 }
 
-// ─── Import Orchestrator ─────────────────────────────────────────────────────
+// ─── Import Orchestrator ──────────────────────────────────────────────────────
 
 export async function importTicketsFromEmail(agencyId: number): Promise<ImportResult> {
   const cfg = await prisma.agencyApiConfig.findUnique({ where: { agencyId } });
@@ -310,7 +357,8 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
 
     let parsed: ParsedEmail;
     try {
-      parsed = parseEmailHtml(mail.html);
+      // FIX: pass subject so parsers can extract name/PNR from it
+      parsed = parseEmailHtml(mail.html, mail.subject);
     } catch (e: any) {
       result.errors.push(`Parse error in email "${mail.subject}": ${e.message}`);
       continue;
