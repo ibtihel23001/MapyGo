@@ -132,32 +132,19 @@ enum SubscriptionStatus {
 
 // ─── Tickets ─────────────────────────────────────────────────
 model Ticket {
-  id              Int          @id @default(autoincrement())
-  agencyId        Int          @map("agency_id")
-  ticketNumber    String       @unique @map("ticket_number")
-  pnr             String?     
-  passengerName   String       @map("passenger_name")
-  passengerEmail  String?      @map("passenger_email")
-  passengerPhone  String?      @map("passenger_phone")
-  origin          String?     
-  destination     String?     
-  departureDate   DateTime?    @map("departure_date")
-  returnDate      DateTime?    @map("return_date")
-  airline         String?     
-  flightNumber    String?      @map("flight_number")
-  ticketClass     String?      @map("ticket_class")
-  fare            Decimal?    
-  taxes           Decimal?    
-  fees            Decimal?    
-  totalAmount     Decimal?     @map("total_amount")
-  currency        String?      @default("USD")
-  status          TicketStatus @default(pending)
-  sellerName      String?      @map("seller_name")
-  clientName      String?      @map("client_name")
-  rawEmailData    String?      @map("raw_email_data")
-  amadeusData     Json?        @map("amadeus_data")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  id            Int          @id @default(autoincrement())
+  agencyId      Int          @map("agency_id")
+  ticketNumber  String       @unique @map("ticket_number")
+  pnr           String?
+  passengerName String       @map("passenger_name")
+  dateOfIssue   DateTime?    @map("date_of_issue")
+  departureDate DateTime?    @map("departure_date")
+  arrivalDate   DateTime?    @map("arrival_date")
+  airFare       Decimal?     @map("air_fare")
+  ttc           Decimal?
+  status        TicketStatus @default(pending)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   refunds      Refund[]
@@ -168,10 +155,9 @@ model Ticket {
 
 enum TicketStatus {
   pending
-  issued
-  cancelled
-  refunded
-  used
+  approved
+  rejected
+  refund
 }
 
 // ─── Refunds ─────────────────────────────────────────────────
