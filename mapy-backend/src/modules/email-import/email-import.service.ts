@@ -203,6 +203,7 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
 
       for await (const msg of client.fetch(toFetch, { source: true })) {
         try {
+          if (!msg.source) continue;
           const raw = msg.source.toString('utf8');
           // Extract HTML body from raw MIME
           const html = extractHtmlFromMime(raw);
