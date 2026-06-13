@@ -8,7 +8,7 @@ export const createUserSchema = z.object({
   password: z.string().min(8).regex(/[A-Z]/, 'Must contain uppercase').regex(/[0-9]/, 'Must contain number'),
   phone: z.string().optional(),
   roleSlug: z.enum(['admin', 'accountant']),
-  agencyId: z.number().int().positive(),
+  agencyId: z.number().int().positive().optional(),
 });
 
 export const updateUserSchema = z.object({
