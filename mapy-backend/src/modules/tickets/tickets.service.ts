@@ -13,7 +13,6 @@ export async function listTickets(query: any, userId: number, agencyId: number |
   const { page, perPage, skip } = getPagination(query);
   const search = query.search?.trim();
   const statusFilter = query.status;
-  const airlineFilter = query.airline?.trim();
   const dateFrom = query.dateFrom;
   const dateTo = query.dateTo;
   const isSuperAdmin = roleSlug === 'superadmin';
@@ -21,7 +20,6 @@ export async function listTickets(query: any, userId: number, agencyId: number |
   const where: any = {
     ...agencyScope(agencyId, isSuperAdmin),
     ...(statusFilter ? { status: statusFilter } : {}),
-    ...(airlineFilter ? { airline: { contains: airlineFilter, mode: 'insensitive' } } : {}),
     ...(dateFrom || dateTo ? {
       departureDate: {
         ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
@@ -69,6 +67,7 @@ export async function createTicket(input: CreateTicketInput, agencyId: number) {
       ticketNumber: input.ticketNumber,
       pnr: input.pnr,
       passengerName: input.passengerName,
+      airline: (input as any).airline ?? undefined,
       dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
       arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
@@ -88,6 +87,7 @@ export async function updateTicket(id: number, input: UpdateTicketInput, agencyI
       ...(input.ticketNumber !== undefined ? { ticketNumber: input.ticketNumber } : {}),
       ...(input.pnr           !== undefined ? { pnr:           input.pnr           } : {}),
       ...(input.passengerName !== undefined ? { passengerName: input.passengerName } : {}),
+      ...(input.airline       !== undefined ? { airline:       input.airline       } : {}),
       ...(input.dateOfIssue   !== undefined ? { dateOfIssue:   new Date(input.dateOfIssue!) } : {}),
       ...(input.departureDate !== undefined ? { departureDate: new Date(input.departureDate!) } : {}),
       ...(input.arrivalDate   !== undefined ? { arrivalDate:   new Date(input.arrivalDate!)   } : {}),
@@ -115,14 +115,12 @@ export async function exportTicketsCsv(query: any, agencyId: number | null, role
   const isSuperAdmin = roleSlug === 'superadmin';
   const search = query.search?.trim();
   const statusFilter = query.status;
-  const airlineFilter = query.airline?.trim();
   const dateFrom = query.dateFrom;
   const dateTo = query.dateTo;
 
   const where: any = {
     ...agencyScope(agencyId, isSuperAdmin),
     ...(statusFilter ? { status: statusFilter } : {}),
-    ...(airlineFilter ? { airline: { contains: airlineFilter, mode: 'insensitive' } } : {}),
     ...(dateFrom || dateTo ? {
       departureDate: {
         ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
@@ -143,11 +141,12 @@ export async function exportTicketsCsv(query: any, agencyId: number | null, role
     orderBy: { createdAt: 'desc' },
   });
 
-  const header = 'Ticket Number,PNR,Passenger Name,Date of Issue,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
+  const header = 'Ticket Number,PNR,Passenger Name,Airline,Date of Issue,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
   const rows = tickets.map((t: typeof tickets[number]) => [
     t.ticketNumber,
     t.pnr ?? '',
     t.passengerName,
+    t.airline ?? '',
     t.dateOfIssue   ? t.dateOfIssue.toISOString().slice(0, 10)   : '',
     t.departureDate ? t.departureDate.toISOString().slice(0, 10) : '',
     t.arrivalDate   ? t.arrivalDate.toISOString().slice(0, 10)   : '',
