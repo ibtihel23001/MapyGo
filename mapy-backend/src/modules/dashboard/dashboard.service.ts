@@ -69,8 +69,8 @@ export async function getAdminStats(agencyId: number) {
         passengerName: true,
         airline: true,
         status: true,
-        totalAmount: true,
-        currency: true,
+        airFare: true,
+        ttc: true,
         createdAt: true,
       },
     }),
@@ -297,4 +297,3 @@ export async function getAccountantStats(agencyId: number) {
     monthlyBreakdown,
   };
 }
-
