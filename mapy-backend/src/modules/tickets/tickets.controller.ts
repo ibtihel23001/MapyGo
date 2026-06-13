@@ -50,3 +50,14 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
     res.json({ success: true, message: 'Ticket deleted' });
   } catch (err) { next(err); }
 }
+
+/** GET /api/tickets/export?status=&dateFrom=&dateTo=&search= */
+export async function exportCsv(req: Request, res: Response, next: NextFunction) {
+  try {
+    const csv = await svc.exportTicketsCsv(req.query, req.user!.agencyId, req.user!.roleSlug);
+    const filename = `tickets_${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('\uFEFF' + csv); // BOM for Excel UTF-8
+  } catch (err) { next(err); }
+}
