@@ -137,6 +137,7 @@ model Ticket {
   ticketNumber  String       @unique @map("ticket_number")
   pnr           String?
   passengerName String       @map("passenger_name")
+  airline       String?
   dateOfIssue   DateTime?    @map("date_of_issue")
   departureDate DateTime?    @map("departure_date")
   arrivalDate   DateTime?    @map("arrival_date")
