@@ -18,10 +18,12 @@ router.get('/accountants', authorize('superadmin', 'admin'), listAccountants);
 
 // Superadmin-only
 router.get('/admins', authorize('superadmin'), listAdmins);
-router.get('/:id', authorize('superadmin'), getOne);
-router.post('/', authorize('superadmin'), create);
-router.put('/:id', authorize('superadmin'), update);
-router.patch('/:id/status', authorize('superadmin'), toggleStatus);
-router.delete('/:id', authorize('superadmin'), remove);
+router.get('/:id', authorize('superadmin', 'admin'), getOne);
+
+// Admin can create/update/toggle/delete accountants within their own agency
+router.post('/', authorize('superadmin', 'admin'), create);
+router.put('/:id', authorize('superadmin', 'admin'), update);
+router.patch('/:id/status', authorize('superadmin', 'admin'), toggleStatus);
+router.delete('/:id', authorize('superadmin', 'admin'), remove);
 
 export default router;
