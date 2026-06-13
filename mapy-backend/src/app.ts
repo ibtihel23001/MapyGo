@@ -25,6 +25,7 @@ import registrationRoutes from './modules/registrations/registrations.routes';
 import apiConfigRoutes    from './modules/api-config/api-config.routes';
 import reportRoutes       from './modules/reports/reports.routes';
 import dashboardRoutes    from './modules/dashboard/dashboard.routes';
+import emailImportRoutes  from './modules/email-import/email-import.routes';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -80,8 +81,15 @@ api.use('/notifications', notificationRoutes);
 api.use('/registrations', registrationRoutes);
 api.use('/api-config',    apiConfigRoutes);
 api.use('/reports',       reportRoutes);
+api.use('/email-import',  emailImportRoutes);
 
 app.use('/api', api);
+
+// ─── Background jobs ──────────────────────────────────────────
+// Runs every 30 min – auto-import e-tickets from Gmail for all agencies
+import('./jobs/email-import.job').catch((e) =>
+  console.error('Failed to start email-import job:', e.message),
+);
 
 // ─── 404 catch-all ───────────────────────────────────────────
 app.use((_req, res) => {
