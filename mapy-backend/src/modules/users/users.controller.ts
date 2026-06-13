@@ -44,6 +44,11 @@ export async function listAccountants(req: Request, res: Response, next: NextFun
 export async function getOne(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await svc.getUser(Number(req.params.id));
+    // Admin can only view users within their own agency
+    if (req.user!.roleSlug === 'admin' && data.agencyId !== req.user!.agencyId) {
+      res.status(403).json({ success: false, message: 'You do not have permission to access this resource' });
+      return;
+    }
     res.json({ success: true, data });
   } catch (err) { next(err); }
 }
@@ -51,6 +56,14 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
     const input = createUserSchema.parse(req.body);
+    // Admin can only create accountants, and only within their own agency
+    if (req.user!.roleSlug === 'admin') {
+      if (input.roleSlug !== 'accountant') {
+        res.status(403).json({ success: false, message: 'Admins can only create accountants' });
+        return;
+      }
+      input.agencyId = req.user!.agencyId!;
+    }
     const data = await svc.createUser(input);
     await logActivity(req, 'create_user', `Created ${input.roleSlug}: ${input.email}`);
     res.status(201).json({ success: true, data });
@@ -59,6 +72,14 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
+    // Admin can only update users within their own agency
+    if (req.user!.roleSlug === 'admin') {
+      const target = await svc.getUser(Number(req.params.id));
+      if (target.agencyId !== req.user!.agencyId) {
+        res.status(403).json({ success: false, message: 'You do not have permission to access this resource' });
+        return;
+      }
+    }
     const input = updateUserSchema.parse(req.body);
     const data = await svc.updateUser(Number(req.params.id), input);
     await logActivity(req, 'update_user', `Updated user ID: ${req.params.id}`);
@@ -68,6 +89,14 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 
 export async function toggleStatus(req: Request, res: Response, next: NextFunction) {
   try {
+    // Admin can only toggle users within their own agency
+    if (req.user!.roleSlug === 'admin') {
+      const target = await svc.getUser(Number(req.params.id));
+      if (target.agencyId !== req.user!.agencyId) {
+        res.status(403).json({ success: false, message: 'You do not have permission to access this resource' });
+        return;
+      }
+    }
     const data = await svc.toggleStatus(Number(req.params.id));
     await logActivity(req, 'toggle_user_status', `Toggled status for user ID: ${req.params.id}`);
     res.json({ success: true, data });
@@ -76,6 +105,14 @@ export async function toggleStatus(req: Request, res: Response, next: NextFuncti
 
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
+    // Admin can only delete users within their own agency
+    if (req.user!.roleSlug === 'admin') {
+      const target = await svc.getUser(Number(req.params.id));
+      if (target.agencyId !== req.user!.agencyId) {
+        res.status(403).json({ success: false, message: 'You do not have permission to access this resource' });
+        return;
+      }
+    }
     await svc.deleteUser(Number(req.params.id), req.user!.id);
     await logActivity(req, 'delete_user', `Deleted user ID: ${req.params.id}`);
     res.json({ success: true, message: 'User deleted' });
