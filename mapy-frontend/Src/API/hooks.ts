@@ -171,7 +171,7 @@ export function useDeleteUser() {
 }
 
 // ─── Tickets ──────────────────────────────────────────────────
-export function useTickets(params: { page?: number; search?: string; status?: string } = {}) {
+export function useTickets(params: { page?: number; search?: string; status?: string; airline?: string; dateFrom?: string; dateTo?: string } = {}) {
   return useQuery<PaginatedResponse<Ticket>>({
     queryKey: ['tickets', params],
     queryFn: () => api.get('/tickets', { params }).then((r) => r.data),
@@ -207,6 +207,14 @@ export function useDeleteTicket() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/tickets/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tickets'] }),
+  })
+}
+
+export function useImportTicketsFromEmail() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post('/email-import/run').then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tickets'] }),
   })
 }
