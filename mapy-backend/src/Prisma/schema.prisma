@@ -137,15 +137,14 @@ model Ticket {
   ticketNumber  String       @unique @map("ticket_number")
   pnr           String?
   passengerName String       @map("passenger_name")
-  airline       String?
-  dateOfIssue   DateTime?    @map("date_of_issue")
   departureDate DateTime?    @map("departure_date")
-  arrivalDate   DateTime?    @map("arrival_date")
-  airFare       Decimal?     @map("air_fare")
-  ttc           Decimal?
-  status        TicketStatus @default(pending)
+  arriveDate    DateTime?    @map("arrive_date")
+  status        TicketStatus @default(approved)
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
+  airline       String?
+  airFare       Decimal?     @map("air_fare")
+  ttc           Decimal?
 
   agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   refunds      Refund[]
@@ -156,9 +155,9 @@ model Ticket {
 
 enum TicketStatus {
   pending
+  refunded
   approved
-  rejected
-  refund
+  rejete
 }
 
 // ─── Refunds ─────────────────────────────────────────────────
