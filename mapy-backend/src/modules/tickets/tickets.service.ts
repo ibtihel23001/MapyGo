@@ -64,16 +64,15 @@ export async function createTicket(input: CreateTicketInput, agencyId: number) {
   return prisma.ticket.create({
     data: {
       agencyId,
-      ticketNumber: input.ticketNumber,
-      pnr: input.pnr,
+      ticketNumber:  input.ticketNumber,
+      pnr:           input.pnr,
       passengerName: input.passengerName,
-      airline: input.airline ?? undefined,
-      dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
+      airline:       input.airline ?? undefined,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
-      arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
-      airFare: input.airFare,
-      ttc: input.ttc,
-      status: 'pending',
+      arriveDate:    input.arriveDate    ? new Date(input.arriveDate)    : undefined,
+      airFare:       input.airFare,
+      ttc:           input.ttc,
+      status:        'approved',
     },
   });
 }
@@ -84,15 +83,14 @@ export async function updateTicket(id: number, input: UpdateTicketInput, agencyI
   return prisma.ticket.update({
     where: { id },
     data: {
-      ...(input.ticketNumber !== undefined ? { ticketNumber: input.ticketNumber } : {}),
-      ...(input.pnr           !== undefined ? { pnr:           input.pnr           } : {}),
-      ...(input.passengerName !== undefined ? { passengerName: input.passengerName } : {}),
-      ...(input.airline       !== undefined ? { airline:       input.airline       } : {}),
-      ...(input.dateOfIssue   !== undefined ? { dateOfIssue:   new Date(input.dateOfIssue!) } : {}),
-      ...(input.departureDate !== undefined ? { departureDate: new Date(input.departureDate!) } : {}),
-      ...(input.arrivalDate   !== undefined ? { arrivalDate:   new Date(input.arrivalDate!)   } : {}),
-      ...(input.airFare       !== undefined ? { airFare:       input.airFare       } : {}),
-      ...(input.ttc           !== undefined ? { ttc:           input.ttc           } : {}),
+      ...(input.ticketNumber !== undefined ? { ticketNumber:  input.ticketNumber }               : {}),
+      ...(input.pnr          !== undefined ? { pnr:           input.pnr }                        : {}),
+      ...(input.passengerName !== undefined ? { passengerName: input.passengerName }              : {}),
+      ...(input.airline      !== undefined ? { airline:       input.airline }                    : {}),
+      ...(input.departureDate !== undefined ? { departureDate: new Date(input.departureDate!) }   : {}),
+      ...(input.arriveDate   !== undefined ? { arriveDate:    new Date(input.arriveDate!) }       : {}),
+      ...(input.airFare      !== undefined ? { airFare:       input.airFare }                    : {}),
+      ...(input.ttc          !== undefined ? { ttc:           input.ttc }                        : {}),
     },
   });
 }
@@ -107,10 +105,6 @@ export async function deleteTicket(id: number, agencyId: number | null, roleSlug
   await prisma.ticket.delete({ where: { id } });
 }
 
-/**
- * Export all matching tickets as a CSV string.
- * Uses same filter logic as listTickets but returns all rows (no pagination).
- */
 export async function exportTicketsCsv(query: any, agencyId: number | null, roleSlug: string): Promise<string> {
   const isSuperAdmin = roleSlug === 'superadmin';
   const search = query.search?.trim();
@@ -141,15 +135,14 @@ export async function exportTicketsCsv(query: any, agencyId: number | null, role
     orderBy: { createdAt: 'desc' },
   });
 
-  const header = 'Ticket Number,PNR,Passenger Name,Airline,Date of Issue,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
+  const header = 'Ticket Number,PNR,Passenger Name,Airline,Departure Date,Arrival Date,Air Fare (DZD),TTC (DZD),Status\r\n';
   const rows = tickets.map((t: typeof tickets[number]) => [
     t.ticketNumber,
     t.pnr ?? '',
     t.passengerName,
     t.airline ?? '',
-    t.dateOfIssue   ? t.dateOfIssue.toISOString().slice(0, 10)   : '',
     t.departureDate ? t.departureDate.toISOString().slice(0, 10) : '',
-    t.arrivalDate   ? t.arrivalDate.toISOString().slice(0, 10)   : '',
+    t.arriveDate    ? t.arriveDate.toISOString().slice(0, 10)    : '',
     t.airFare != null ? Number(t.airFare).toFixed(2) : '',
     t.ttc     != null ? Number(t.ttc).toFixed(2)     : '',
     t.status,
