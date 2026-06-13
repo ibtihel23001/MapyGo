@@ -67,7 +67,7 @@ export async function createTicket(input: CreateTicketInput, agencyId: number) {
       ticketNumber: input.ticketNumber,
       pnr: input.pnr,
       passengerName: input.passengerName,
-      airline: (input as any).airline ?? undefined,
+      airline: input.airline ?? undefined,
       dateOfIssue: input.dateOfIssue ? new Date(input.dateOfIssue) : undefined,
       departureDate: input.departureDate ? new Date(input.departureDate) : undefined,
       arrivalDate: input.arrivalDate ? new Date(input.arrivalDate) : undefined,
