@@ -42,7 +42,7 @@ export interface Agency {
 }
 
 // ─── Tickets ─────────────────────────────────────────────────
-export type TicketStatus = 'pending' | 'issued' | 'cancelled' | 'refunded' | 'used';
+export type TicketStatus = 'pending' | 'approved' | 'rejected' | 'refund';
 
 export interface Ticket {
   id: number;
@@ -50,23 +50,12 @@ export interface Ticket {
   ticketNumber: string;
   pnr?: string | null;
   passengerName: string;
-  passengerEmail?: string | null;
-  passengerPhone?: string | null;
-  origin?: string | null;
-  destination?: string | null;
+  dateOfIssue?: string | null;
   departureDate?: string | null;
-  returnDate?: string | null;
-  airline?: string | null;
-  flightNumber?: string | null;
-  ticketClass?: string | null;
-  fare?: number | null;
-  taxes?: number | null;
-  fees?: number | null;
-  totalAmount?: number | null;
-  currency?: string | null;
+  arrivalDate?: string | null;
+  airFare?: number | null;
+  ttc?: number | null;
   status: TicketStatus;
-  sellerName?: string | null;
-  clientName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
