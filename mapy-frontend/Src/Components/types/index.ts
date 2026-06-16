@@ -50,9 +50,9 @@ export interface Ticket {
   ticketNumber: string;
   pnr?: string | null;
   passengerName: string;
-  dateOfIssue?: string | null;
+  airline?: string | null;
   departureDate?: string | null;
-  arrivalDate?: string | null;
+  arriveDate?: string | null;
   airFare?: number | null;
   ttc?: number | null;
   status: TicketStatus;
