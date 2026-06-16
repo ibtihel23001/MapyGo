@@ -208,21 +208,40 @@ interface RawEmail {
 }
 
 async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
+  const host = config.host ?? 'imap.gmail.com';
+  const port = config.port ?? 993;
+
   const client = new ImapFlow({
-    host: config.host ?? 'imap.gmail.com',
-    port: config.port ?? 993,
-    secure: true,
+    host,
+    port,
+    secure: port === 993,
     auth: {
       user: config.user,
       pass: config.password,
     },
     logger: false,
     tls: { rejectUnauthorized: false },
+    // Prevent hanging on Railway/serverless — fail fast
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 30000,
+  });
+
+  client.on('error', (err: Error) => {
+    console.error(`[EmailImport] IMAP client error (${host}:${port}):`, err.message);
   });
 
   const emails: RawEmail[] = [];
 
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (err: any) {
+    const hint =
+      host.includes('gmail') && (err.message ?? '').includes('auth')
+        ? ' — Gmail requires an App Password (not your regular password). Enable 2FA then generate one at myaccount.google.com/apppasswords.'
+        : '';
+    throw new Error(`Cannot connect to ${host}:${port} as ${config.user}: ${err.message}${hint}`);
+  }
 
   try {
     const lock = await client.getMailboxLock('INBOX');
@@ -334,7 +353,9 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
       port: cfg.imapPort ?? undefined,
     });
   } catch (err: any) {
-    throw createError(`IMAP connection failed: ${err.message}`, 502);
+    // Re-throw our enriched errors as-is; wrap anything else
+    const msg = err.message ?? String(err);
+    throw createError(msg.startsWith('Cannot connect') ? msg : `IMAP connection failed: ${msg}`, 502);
   }
 
   const result: ImportResult = { imported: 0, skipped: 0, errors: [], tickets: [] };
