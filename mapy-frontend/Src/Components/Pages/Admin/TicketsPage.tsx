@@ -27,14 +27,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ─── Form schema (matches real Prisma Ticket) ─────────────────
 const schema = z.object({
-  ticketNumber: z.string().min(1, 'Required'),
-  pnr:          z.string().optional(),
+  ticketNumber:  z.string().min(1, 'Required'),
+  pnr:           z.string().optional(),
   passengerName: z.string().min(1, 'Required'),
-  dateOfIssue:   z.string().optional(),
+  airline:       z.string().optional(),
   departureDate: z.string().optional(),
-  arrivalDate:   z.string().optional(),
-  airFare: z.coerce.number().optional(),
-  ttc:     z.coerce.number().optional(),
+  arriveDate:    z.string().optional(),
+  airFare:       z.coerce.number().optional(),
+  ttc:           z.coerce.number().optional(),
 })
 type FormData = z.infer<typeof schema>
 
@@ -80,13 +80,13 @@ export default function AdminTicketsPage() {
     setSelected(t)
     reset({
       ticketNumber:  t.ticketNumber,
-      pnr:           t.pnr          ?? undefined,
+      pnr:           t.pnr           ?? undefined,
       passengerName: t.passengerName,
-      dateOfIssue:   t.dateOfIssue  ? t.dateOfIssue.slice(0, 10)   : undefined,
+      airline:       t.airline       ?? undefined,
       departureDate: t.departureDate ? t.departureDate.slice(0, 10) : undefined,
-      arrivalDate:   t.arrivalDate  ? t.arrivalDate.slice(0, 10)   : undefined,
-      airFare:       t.airFare ?? undefined,
-      ttc:           t.ttc    ?? undefined,
+      arriveDate:    t.arriveDate    ? t.arriveDate.slice(0, 10)    : undefined,
+      airFare:       t.airFare       ?? undefined,
+      ttc:           t.ttc           ?? undefined,
     })
     setModal('edit')
   }
@@ -290,7 +290,7 @@ export default function AdminTicketsPage() {
                     <th>Ticket #</th>
                     <th>PNR</th>
                     <th>Passenger</th>
-                    <th>Date of Issue</th>
+                    <th>Airline</th>
                     <th>Departure</th>
                     <th>Arrival</th>
                     <th>Air Fare</th>
@@ -312,9 +312,9 @@ export default function AdminTicketsPage() {
                       <td>
                         <div className="font-medium">{t.passengerName}</div>
                       </td>
-                      <td className="text-sm">{fDate(t.dateOfIssue)}</td>
+                      <td className="text-sm text-slate-500">{t.airline ?? '—'}</td>
                       <td className="text-sm">{fDate(t.departureDate)}</td>
-                      <td className="text-sm">{fDate(t.arrivalDate)}</td>
+                      <td className="text-sm">{fDate(t.arriveDate)}</td>
                       <td className="text-sm">
                         {t.airFare != null ? `${Number(t.airFare).toLocaleString()} DZD` : '—'}
                       </td>
@@ -385,15 +385,16 @@ export default function AdminTicketsPage() {
             <input {...register('passengerName')} className="input" placeholder="Younes Kenzi Iheb Zerroug" />
           </FormField>
 
-          <div className="grid grid-cols-3 gap-4">
-            <FormField label="Date of Issue" error={errors.dateOfIssue?.message}>
-              <input type="date" {...register('dateOfIssue')} className="input" />
-            </FormField>
+          <FormField label="Airline" error={errors.airline?.message}>
+            <input {...register('airline')} className="input" placeholder="Air Algérie, Turkish Airlines…" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
             <FormField label="Departure Date" error={errors.departureDate?.message}>
               <input type="date" {...register('departureDate')} className="input" />
             </FormField>
-            <FormField label="Arrival Date" error={errors.arrivalDate?.message}>
-              <input type="date" {...register('arrivalDate')} className="input" />
+            <FormField label="Arrival Date" error={errors.arriveDate?.message}>
+              <input type="date" {...register('arriveDate')} className="input" />
             </FormField>
           </div>
 
