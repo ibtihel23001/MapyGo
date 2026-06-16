@@ -48,7 +48,7 @@ export default function SuperadminTicketsPage() {
                     <th>Ticket #</th>
                     <th>PNR</th>
                     <th>Passenger</th>
-                    <th>Date of Issue</th>
+                    <th>Airline</th>
                     <th>Departure</th>
                     <th>Air Fare</th>
                     <th>TTC</th>
@@ -71,7 +71,7 @@ export default function SuperadminTicketsPage() {
                       </td>
                       <td className="text-sm text-slate-500">{t.pnr ?? '—'}</td>
                       <td className="font-medium">{t.passengerName}</td>
-                      <td className="text-sm">{fDate(t.dateOfIssue)}</td>
+                      <td className="text-sm text-slate-500">{t.airline ?? '—'}</td>
                       <td className="text-sm">{fDate(t.departureDate)}</td>
                       <td className="text-sm">
                         {t.airFare != null ? `${Number(t.airFare).toLocaleString()} DZD` : '—'}
