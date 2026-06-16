@@ -381,18 +381,13 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
     for (const pax of parsed.passengers) {
       if (!pax.ticketNumber) { result.skipped++; continue; }
 
-      // Check by ticketNumber only (it's globally unique in schema)
-      const exists = await prisma.ticket.findUnique({
-        where: { ticketNumber: pax.ticketNumber },
+      // Check if this agency already has this ticket
+      const exists = await prisma.ticket.findFirst({
+        where: { agencyId, ticketNumber: pax.ticketNumber },
       });
 
       if (exists) {
-        // If it belongs to a different agency, log it as an error, not a silent skip
-        if (exists.agencyId !== agencyId) {
-          result.errors.push(`Ticket ${pax.ticketNumber} already exists under a different agency.`);
-        } else {
-          result.skipped++;
-        }
+        result.skipped++;
         continue;
       }
 
@@ -420,6 +415,7 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
       } catch (e: any) {
         // Handle race condition: another process inserted between our check and create
         if (e.code === 'P2002') {
+          // Race condition: inserted between our check and create
           result.skipped++;
         } else {
           result.errors.push(`DB error for ticket ${pax.ticketNumber}: ${e.message}`);
