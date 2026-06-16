@@ -58,8 +58,10 @@ export async function getTicket(id: number, agencyId: number | null, roleSlug: s
 }
 
 export async function createTicket(input: CreateTicketInput, agencyId: number) {
-  const existing = await prisma.ticket.findUnique({ where: { ticketNumber: input.ticketNumber } });
-  if (existing) throw createError('Ticket number already exists', 409);
+  const existing = await prisma.ticket.findUnique({
+    where: { agency_ticket_unique: { agencyId, ticketNumber: input.ticketNumber } },
+  });
+  if (existing) throw createError('Ticket number already exists for this agency', 409);
 
   return prisma.ticket.create({
     data: {
