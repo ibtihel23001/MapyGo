@@ -347,7 +347,7 @@ export function detectFormat(body: string): EmailFormat {
   // TELEX: has "Your trip" + "Booking ref" but NO 13-digit ticket
   const hasTripKeyword = /your trip|votre voyage/i.test(body);
   const hasBookingRef  = /booking\s+ref(?:erence)?\s*[:\s]|airline\s+booking\s+reference\s*[:\s]/i.test(body);
-  const hasTicketNum   = /\b\d{3}[- ]\d{10}\b/.test(body);
+  const hasTicketNum   = /\b\d{3}[- ]\d{10}(?:[- ]\d{2,3})?\b/.test(body);
 
   if (hasTripKeyword && hasBookingRef && !hasTicketNum) return 'TELEX';
 
@@ -505,18 +505,18 @@ function extractConfirmation(body: string): ExtractedTicket[] {
       const l = line.trim();
       if (!l) continue;
 
-      // "Mr Firstname Lastname 157-1234567890 Qatar Airways"
-      const m1 = l.match(/(?:Mr|Mrs|Ms|Miss)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(\d{3}-\d{10})\s+(.+)/i);
+      // "Mr Firstname Lastname 157-1234567890 Qatar Airways"  OR  "030-2403650280-34 Firstname Lastname"
+      const m1 = l.match(/(?:Mr|Mrs|Ms|Miss)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(\d{3}-\d{10}(?:-\d{2,3})?)\s+(.+)/i);
       if (m1) {
         const parts = m1[1].trim().split(' ');
         const last = parts.pop()!;
         travelers.push({ name: `${last} ${parts.join(' ')}`.trim(), ticketNumber: m1[2] });
         continue;
       }
-      // Any line with ticket pattern
-      const m2 = l.match(/(\d{3}-\d{10})/);
+      // Any line with ticket pattern (all 3 formats)
+      const m2 = l.match(/(\d{3}-\d{10}(?:-\d{2,3})?)/);
       if (m2) {
-        const namePart = l.replace(/\d{3}-\d{10}.*/, '').trim();
+        const namePart = l.replace(/\d{3}-\d{10}(?:-\d{2,3})?.*/, '').trim();
         travelers.push({ name: namePart || 'Unknown Traveler', ticketNumber: m2[1] });
       }
     }
@@ -524,7 +524,7 @@ function extractConfirmation(body: string): ExtractedTicket[] {
 
   // Fallback: scan full body for ticket numbers
   if (travelers.length === 0) {
-    const allTickets = [...body.matchAll(/\b(\d{3}-\d{10})\b/g)];
+    const allTickets = [...body.matchAll(/\b(\d{3}-\d{10}(?:-\d{2,3})?)\b/g)];
     for (const tm of allTickets) {
       const t = tm[1];
       // look backwards for name
@@ -610,19 +610,20 @@ function extractEticketEN(body: string, format: EmailFormat): ExtractedTicket[] 
     '257','512','515','607','618','624','706','724','784','999','001','006','014','016','020','032','074','077'];
 
   const ticketPatterns: RegExp[] = [
-    /TICKET\s*(?:NUMBER)?\s*:?\s*(?:ETKT\s+)?(\d{3})[ \t\-](\d{10})/i,
-    /ETKT[ \t]+(\d{3})[ \t]+(\d{10})/i,
-    /\b(\d{3})[ \t\-](\d{10})\b/,
+    /TICKET\s*(?:NUMBER)?\s*:?\s*(?:ETKT\s+)?(\d{3})[ \t\-](\d{10})(?:[ \t\-]\d{2,3})?/i,
+    /ETKT[ \t]+(\d{3})[ \t]+(\d{10})(?:[ \t]\d{2,3})?/i,
+    /\b(\d{3})[ \t\-](\d{10})(?:[ \t\-]\d{2,3})?\b/,
     /\b(\d{3})(\d{10})\b/,
   ];
   for (const pat of ticketPatterns) {
     const m = collapsed.match(pat);
     if (m) { ticketNumber = `${m[1]}-${m[2]}`; break; }
   }
-  // Fallback: use original body (catches multi-line)
   if (!ticketNumber) {
-    const fb = originalBody.match(/(\d{3})[\s-](\d{10})/);
-    if (fb && KNOWN_PREFIXES.includes(fb[1])) ticketNumber = `${fb[1]}-${fb[2]}`;
+    const fb = originalBody.match(/(\d{3})[\s-](\d{10})(?:[\s-](\d{2,3}))?/);
+    if (fb && KNOWN_PREFIXES.includes(fb[1])) {
+      ticketNumber = fb[3] ? `${fb[1]}-${fb[2]}-${fb[3]}` : `${fb[1]}-${fb[2]}`;
+    }
   }
 
   // 3. Booking ref
@@ -1025,6 +1026,8 @@ export interface ImportResult {
   inserted: number;
   skipped: number;
   errors: string[];
+  extractionLog: string[];   // step-by-step trace of what was extracted and why
+}
 }
 
 /**
@@ -1047,11 +1050,21 @@ export async function importFromEmailBody(
     inserted: 0,
     skipped: 0,
     errors: [],
+    extractionLog: [],
   };
+
+  const log = (msg: string) => {
+    result.extractionLog.push(`[${new Date().toISOString()}] ${msg}`);
+    console.log(`[EmailImport] ${msg}`);
+  };
+
+  log(`Body length: ${rawBody.length} chars`);
+  log(`Body preview (first 500): ${rawBody.slice(0, 500).replace(/\n/g, ' ↵ ')}`);
 
   // 1. Format detection
   const format = detectFormat(rawBody);
   result.format = format;
+  log(`Detected format: ${format}`);
 
   // 2. Extraction
   let records: ExtractedTicket[] = [];
@@ -1064,31 +1077,41 @@ export async function importFromEmailBody(
       case 'SOLEIL':       records = extractSoleil(rawBody);       break;
       default:
         result.errors.push('Unrecognized email format — no tickets extracted');
+        log('ERROR: Unrecognized format — no extraction attempted');
         return result;
     }
   } catch (err: any) {
-    result.errors.push(`Extraction error: ${err?.message ?? String(err)}`);
+    const msg = `Extraction error: ${err?.message ?? String(err)}`;
+    result.errors.push(msg);
+    log(`ERROR: ${msg}`);
     return result;
   }
 
   result.total = records.length;
+  log(`Extraction complete: ${records.length} record(s) found`);
+
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i];
+    log(`  Record ${i + 1}: ticket="${rec.ticketNumber}" | passenger="${rec.passengerName}" | airline="${rec.airline}" | pnr="${rec.pnr}" | airFare=${rec.airFare} | ttc=${rec.ttc}`);
+  }
+
   if (records.length === 0) {
     result.errors.push('No ticket records extracted from email body');
+    log('WARN: No records extracted — check format detection and body content');
     return result;
   }
 
   // 3. Agency code detection (DB-driven)
   const detectedAgency = await detectAgency(rawBody, db);
+  if (detectedAgency) log(`Detected agency in body: "${detectedAgency.agencyName}"`);
 
   // 4. Upsert into DB
   for (const rec of records) {
     try {
-      // Apply agency code detection to all records
       if (detectedAgency) {
         rec.detectedAgencyName = detectedAgency.agencyName;
       }
 
-      // Check for existing ticket in this agency
       const existing = await db.ticket.findUnique({
         where: {
           agency_ticket_unique: {
@@ -1099,6 +1122,7 @@ export async function importFromEmailBody(
       });
 
       if (existing) {
+        log(`  SKIPPED (already exists): ticket="${rec.ticketNumber}"`);
         result.skipped++;
         continue;
       }
@@ -1115,18 +1139,19 @@ export async function importFromEmailBody(
           airFare:       rec.airFare !== null ? rec.airFare : undefined,
           ttc:           rec.ttc    !== null ? rec.ttc    : undefined,
           status:        'approved',
-          // Extra metadata — stored in itinerary/notes field if your schema has one
-          // Otherwise these are just extracted but not yet stored — extend your
-          // Prisma schema with: itinerary String?, importSource String?, importedAgencyName String?
         },
       });
 
+      log(`  INSERTED: ticket="${rec.ticketNumber}" | passenger="${rec.passengerName}"`);
       result.inserted++;
     } catch (err: any) {
-      result.errors.push(`Insert error for ${rec.ticketNumber}: ${err?.message ?? String(err)}`);
+      const msg = `Insert error for ${rec.ticketNumber}: ${err?.message ?? String(err)}`;
+      result.errors.push(msg);
+      log(`  ERROR: ${msg}`);
     }
   }
 
+  log(`DONE: inserted=${result.inserted} skipped=${result.skipped} errors=${result.errors.length}`);
   return result;
 }
 
