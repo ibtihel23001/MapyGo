@@ -39,10 +39,20 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 // ─── Import result toast ──────────────────────────────────────
+interface EmailLog {
+  subject: string
+  format: string
+  extracted: number
+  inserted: number
+  skipped: number
+  extractionLog: string[]
+}
+
 interface ImportResultBanner {
   imported: number
   skipped: number
   errors: string[]
+  emailLogs?: EmailLog[]
 }
 
 export default function AdminTicketsPage() {
@@ -62,6 +72,8 @@ export default function AdminTicketsPage() {
 
   // ── Import banner ──
   const [importResult, setImportResult] = useState<ImportResultBanner | null>(null)
+  const [showLogs, setShowLogs] = useState(false)
+  const [activeLogEmail, setActiveLogEmail] = useState<number | null>(null)
 
   // ── Data hooks ──
   const { data, isLoading } = useTickets({ page, search, status, airline, dateFrom, dateTo })
@@ -175,25 +187,115 @@ export default function AdminTicketsPage() {
 
       {/* ── Import result banner ── */}
       {importResult && (
-        <div className={`mb-4 p-4 rounded-lg border flex items-start justify-between gap-3 ${
+        <div className={`mb-4 p-4 rounded-lg border ${
           importResult.imported > 0 ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
         }`}>
-          <div className="text-sm">
-            <p className="font-semibold mb-1">
-              {importResult.imported > 0
-                ? `✅ ${importResult.imported} ticket(s) imported successfully`
-                : '⚠️ No new tickets found'}
-            </p>
-            {importResult.skipped > 0 && (
-              <p className="text-slate-500">{importResult.skipped} already existed (skipped)</p>
-            )}
-            {importResult.errors.length > 0 && (
-              <p className="text-red-600 mt-1">{importResult.errors.length} error(s): {importResult.errors[0]}</p>
-            )}
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-sm flex-1">
+              <p className="font-semibold mb-1">
+                {importResult.imported > 0
+                  ? `✅ ${importResult.imported} ticket(s) imported successfully`
+                  : '⚠️ No new tickets found'}
+              </p>
+              {importResult.skipped > 0 && (
+                <p className="text-slate-500">{importResult.skipped} already existed (skipped)</p>
+              )}
+              {importResult.errors.length > 0 && (
+                <p className="text-red-600 mt-1">{importResult.errors.length} error(s): {importResult.errors[0]}</p>
+              )}
+              {importResult.emailLogs && importResult.emailLogs.length > 0 && (
+                <button
+                  onClick={() => setShowLogs(true)}
+                  className="mt-2 text-blue-600 hover:text-blue-800 text-xs font-medium underline underline-offset-2"
+                >
+                  🔍 View extraction logs ({importResult.emailLogs.length} email{importResult.emailLogs.length > 1 ? 's' : ''} processed)
+                </button>
+              )}
+            </div>
+            <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600 shrink-0">
+              <X size={16} />
+            </button>
           </div>
-          <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600">
-            <X size={16} />
-          </button>
+        </div>
+      )}
+
+      {/* ── Extraction Logs Modal ── */}
+      {showLogs && importResult?.emailLogs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">Extraction Logs</h2>
+                <p className="text-xs text-slate-500 mt-0.5">{importResult.emailLogs.length} email(s) processed</p>
+              </div>
+              <button onClick={() => { setShowLogs(false); setActiveLogEmail(null) }} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden">
+              {/* Email list sidebar */}
+              <div className="w-64 border-r overflow-y-auto shrink-0">
+                {importResult.emailLogs.map((log, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveLogEmail(i)}
+                    className={`w-full text-left px-4 py-3 border-b text-xs hover:bg-slate-50 transition-colors ${
+                      activeLogEmail === i ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-slate-700 truncate mb-1" title={log.subject}>
+                      {log.subject || '(no subject)'}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <span className="bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{log.format}</span>
+                      {log.inserted > 0 && <span className="bg-green-100 text-green-700 rounded px-1.5 py-0.5">+{log.inserted} inserted</span>}
+                      {log.skipped > 0 && <span className="bg-yellow-100 text-yellow-700 rounded px-1.5 py-0.5">{log.skipped} skipped</span>}
+                      {log.extracted === 0 && <span className="bg-red-100 text-red-600 rounded px-1.5 py-0.5">0 extracted</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Log detail */}
+              <div className="flex-1 overflow-y-auto">
+                {activeLogEmail === null ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <p className="text-sm">Select an email to view its extraction log</p>
+                  </div>
+                ) : (
+                  <div className="p-4">
+                    <div className="mb-3">
+                      <p className="font-medium text-slate-700 text-sm">{importResult.emailLogs[activeLogEmail].subject || '(no subject)'}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Format: <strong>{importResult.emailLogs[activeLogEmail].format}</strong> &bull;{' '}
+                        {importResult.emailLogs[activeLogEmail].extracted} record(s) extracted
+                      </p>
+                    </div>
+                    <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-300 overflow-x-auto">
+                      {importResult.emailLogs[activeLogEmail].extractionLog.length === 0 ? (
+                        <span className="text-slate-500">No log entries</span>
+                      ) : (
+                        importResult.emailLogs[activeLogEmail].extractionLog.map((line, li) => (
+                          <div key={li} className={`leading-5 ${
+                            line.includes('INSERTED') ? 'text-green-400 font-bold' :
+                            line.includes('SKIPPED') ? 'text-yellow-400' :
+                            line.includes('ERROR') ? 'text-red-400 font-bold' :
+                            line.includes('Detected format') ? 'text-blue-300' :
+                            line.includes('preview') || line.includes('Body') ? 'text-slate-500' :
+                            'text-green-300'
+                          }`}>
+                            {line}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
