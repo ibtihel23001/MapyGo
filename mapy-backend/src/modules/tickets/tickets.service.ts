@@ -1028,7 +1028,6 @@ export interface ImportResult {
   errors: string[];
   extractionLog: string[];   // step-by-step trace of what was extracted and why
 }
-}
 
 /**
  * Parse a raw email body, detect its format, extract ticket records, and
