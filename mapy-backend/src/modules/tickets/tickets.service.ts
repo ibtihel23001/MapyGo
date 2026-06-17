@@ -1183,6 +1183,7 @@ import type {
   UpdateTicketStatusInput,
 } from './tickets.schema';
 import { createError } from '../../middleware/errorHandler';
+import { getPagination, buildMeta } from '../../utils/paginate';
 
 function isSuperAdmin(roleSlug?: string) {
   return roleSlug === 'super_admin' || roleSlug === 'superadmin';
@@ -1199,9 +1200,7 @@ export async function listTickets(
   agencyId?: number | null,
   roleSlug?: string,
 ) {
-  const page   = Math.max(1, parseInt(query.page  ?? '1'));
-  const limit  = Math.min(100, parseInt(query.limit ?? '20'));
-  const skip   = (page - 1) * limit;
+  const { page, perPage: limit, skip } = getPagination(query);
 
   const where: any = { ...agencyFilter(agencyId, roleSlug) };
   if (query.search) {
@@ -1224,7 +1223,7 @@ export async function listTickets(
     prisma.ticket.count({ where }),
   ]);
 
-  return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  return { data, meta: buildMeta(total, page, limit) };
 }
 
 export async function getTicket(id: number, agencyId?: number | null, roleSlug?: string) {
