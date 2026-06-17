@@ -18,7 +18,7 @@ export async function runImport(req: Request, res: Response, next: NextFunction)
     await logActivity(
       req,
       'email_import',
-      `Email import completed: ${result.imported} imported, ${result.skipped} skipped`,
+      `Email import completed: ${result.imported} imported, ${result.skipped} skipped. Log: ${result.logFile ?? 'n/a'}`,
     );
 
     return res.json({ success: true, data: result });
