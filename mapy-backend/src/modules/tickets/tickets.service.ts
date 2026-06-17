@@ -1000,18 +1000,17 @@ async function detectAgency(
   db: PrismaClient = prisma
 ): Promise<{ agencyCode: string; agencyName: string } | null> {
   try {
-    // Fetch all agencies that have an agencyCode set
+    // Match agency by name appearing in the email body
     const agencies = await db.agency.findMany({
-      where: { agencyCode: { not: null } },
-      select: { agencyCode: true, name: true },
+      select: { name: true, slug: true },
     });
     for (const ag of agencies) {
-      if (ag.agencyCode && body.includes(ag.agencyCode)) {
-        return { agencyCode: ag.agencyCode, agencyName: ag.name };
+      if (ag.name && body.toLowerCase().includes(ag.name.toLowerCase())) {
+        return { agencyCode: ag.slug, agencyName: ag.name };
       }
     }
   } catch (_) {
-    // If agency table or agencyCode field doesn't exist yet, silently skip
+    // Silently skip if lookup fails
   }
   return null;
 }
@@ -1111,12 +1110,10 @@ export async function importFromEmailBody(
         rec.detectedAgencyName = detectedAgency.agencyName;
       }
 
-      const existing = await db.ticket.findUnique({
+      const existing = await db.ticket.findFirst({
         where: {
-          agency_ticket_unique: {
-            agencyId,
-            ticketNumber: rec.ticketNumber,
-          },
+          agencyId,
+          ticketNumber: rec.ticketNumber,
         },
       });
 
@@ -1173,4 +1170,155 @@ export async function previewEmailImport(
   }
 
   return { format, records };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRUD — listTickets, getTicket, createTicket, updateTicket, deleteTicket, exportTicketsCsv
+// These are consumed by tickets.controller.ts via `import * as svc`
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type {
+  CreateTicketInput,
+  UpdateTicketInput,
+  UpdateTicketStatusInput,
+} from './tickets.schema';
+import { createError } from '../../middleware/errorHandler';
+
+function isSuperAdmin(roleSlug?: string) {
+  return roleSlug === 'super_admin' || roleSlug === 'superadmin';
+}
+
+function agencyFilter(agencyId?: number | null, roleSlug?: string) {
+  if (isSuperAdmin(roleSlug)) return {};
+  return agencyId ? { agencyId } : { agencyId: -1 }; // no results if no agency
+}
+
+export async function listTickets(
+  query: Record<string, any>,
+  _userId: number,
+  agencyId?: number | null,
+  roleSlug?: string,
+) {
+  const page   = Math.max(1, parseInt(query.page  ?? '1'));
+  const limit  = Math.min(100, parseInt(query.limit ?? '20'));
+  const skip   = (page - 1) * limit;
+
+  const where: any = { ...agencyFilter(agencyId, roleSlug) };
+  if (query.search) {
+    where.OR = [
+      { ticketNumber:  { contains: query.search, mode: 'insensitive' } },
+      { passengerName: { contains: query.search, mode: 'insensitive' } },
+      { pnr:           { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+  if (query.status)  where.status  = query.status;
+  if (query.airline) where.airline = { contains: query.airline, mode: 'insensitive' };
+  if (query.dateFrom || query.dateTo) {
+    where.departureDate = {};
+    if (query.dateFrom) where.departureDate.gte = new Date(query.dateFrom);
+    if (query.dateTo)   where.departureDate.lte = new Date(query.dateTo);
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.ticket.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+    prisma.ticket.count({ where }),
+  ]);
+
+  return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getTicket(id: number, agencyId?: number | null, roleSlug?: string) {
+  const ticket = await prisma.ticket.findUnique({ where: { id } });
+  if (!ticket) throw createError('Ticket not found', 404);
+  if (!isSuperAdmin(roleSlug) && agencyId && ticket.agencyId !== agencyId)
+    throw createError('Forbidden', 403);
+  return ticket;
+}
+
+export async function createTicket(input: CreateTicketInput, agencyId: number) {
+  return prisma.ticket.create({
+    data: {
+      agencyId,
+      ticketNumber:  input.ticketNumber,
+      pnr:           input.pnr ?? null,
+      passengerName: input.passengerName,
+      airline:       input.airline ?? null,
+      departureDate: input.departureDate ? new Date(input.departureDate) : null,
+      arriveDate:    input.arriveDate    ? new Date(input.arriveDate)    : null,
+      airFare:       input.airFare ?? null,
+      ttc:           input.ttc ?? null,
+    },
+  });
+}
+
+export async function updateTicket(
+  id: number,
+  input: UpdateTicketInput,
+  agencyId?: number | null,
+  roleSlug?: string,
+) {
+  const ticket = await getTicket(id, agencyId, roleSlug);
+  return prisma.ticket.update({
+    where: { id: ticket.id },
+    data: {
+      ...(input.ticketNumber  !== undefined && { ticketNumber:  input.ticketNumber }),
+      ...(input.pnr           !== undefined && { pnr:           input.pnr }),
+      ...(input.passengerName !== undefined && { passengerName: input.passengerName }),
+      ...(input.airline       !== undefined && { airline:       input.airline }),
+      ...(input.departureDate !== undefined && { departureDate: input.departureDate ? new Date(input.departureDate) : null }),
+      ...(input.arriveDate    !== undefined && { arriveDate:    input.arriveDate    ? new Date(input.arriveDate)    : null }),
+      ...(input.airFare       !== undefined && { airFare:       input.airFare }),
+      ...(input.ttc           !== undefined && { ttc:           input.ttc }),
+    },
+  });
+}
+
+export async function updateTicketStatus(
+  id: number,
+  input: UpdateTicketStatusInput,
+  agencyId?: number | null,
+  roleSlug?: string,
+) {
+  const ticket = await getTicket(id, agencyId, roleSlug);
+  return prisma.ticket.update({ where: { id: ticket.id }, data: { status: input.status as any } });
+}
+
+export async function deleteTicket(id: number, agencyId?: number | null, roleSlug?: string) {
+  const ticket = await getTicket(id, agencyId, roleSlug);
+  await prisma.ticket.delete({ where: { id: ticket.id } });
+}
+
+export async function exportTicketsCsv(
+  query: Record<string, any>,
+  agencyId?: number | null,
+  roleSlug?: string,
+): Promise<string> {
+  const where: any = { ...agencyFilter(agencyId, roleSlug) };
+  if (query.search)  where.OR = [
+    { ticketNumber:  { contains: query.search, mode: 'insensitive' } },
+    { passengerName: { contains: query.search, mode: 'insensitive' } },
+  ];
+  if (query.status)  where.status  = query.status;
+  if (query.dateFrom || query.dateTo) {
+    where.departureDate = {};
+    if (query.dateFrom) where.departureDate.gte = new Date(query.dateFrom);
+    if (query.dateTo)   where.departureDate.lte = new Date(query.dateTo);
+  }
+
+  const tickets = await prisma.ticket.findMany({ where, orderBy: { createdAt: 'desc' } });
+
+  const header = 'Ticket #,PNR,Passenger,Airline,Departure,Arrival,Air Fare,TTC,Status\n';
+  const rows = tickets.map(t => [
+    t.ticketNumber,
+    t.pnr ?? '',
+    t.passengerName,
+    t.airline ?? '',
+    t.departureDate ? t.departureDate.toISOString().slice(0, 10) : '',
+    t.arriveDate    ? t.arriveDate.toISOString().slice(0, 10)    : '',
+    t.airFare?.toString() ?? '',
+    t.ttc?.toString() ?? '',
+    t.status,
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+  return header + rows;
 }
