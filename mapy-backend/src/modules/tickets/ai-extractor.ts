@@ -40,7 +40,7 @@ export async function extractWithGroq(
         'Content-Type':  'application/json',
       },
       body: JSON.stringify({
-        model:       'llama-3.1-8b-instant',
+        model:       'llama-3.3-70b-versatile',
         temperature: 0,
         max_tokens:  1000,
         messages: [
