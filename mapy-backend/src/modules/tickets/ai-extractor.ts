@@ -59,7 +59,7 @@ export async function extractWithGroq(
     return [];
   }
 
-  const json = await response.json();
+  const json = await response.json() as any;
   const raw: string = json?.choices?.[0]?.message?.content ?? '[]';
 
   log(`AI EXTRACTOR: Raw response → ${raw.slice(0, 200)}`);
