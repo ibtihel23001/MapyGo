@@ -1073,10 +1073,19 @@ export async function importFromEmailBody(
       case 'NOREPLY':      records = extractNoreply(rawBody);      break;
       case 'TELEX':        records = extractTelex(rawBody);        break;
       case 'SOLEIL':       records = extractSoleil(rawBody);       break;
-      default:
-        result.errors.push('Unrecognized email format — no tickets extracted');
-        log('ERROR: Unrecognized format — no extraction attempted');
-        return result;
+      default: {
+  log('UNKNOWN format — trying Groq AI extractor...');
+  const { extractWithGroq } = await import('./ai-extractor');
+  records = await extractWithGroq(rawBody, log);
+  if (records.length > 0) {
+    result.format = 'UNKNOWN';
+    log(`AI extracted ${records.length} record(s) successfully`);
+  } else {
+    result.errors.push('Unrecognized format — AI extraction found no tickets');
+    log('WARN: AI extractor returned 0 records');
+  }
+  break;
+}
     }
   } catch (err: any) {
     const msg = `Extraction error: ${err?.message ?? String(err)}`;
