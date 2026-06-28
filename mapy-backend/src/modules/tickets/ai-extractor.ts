@@ -2,17 +2,14 @@ import type { ExtractedTicket, EmailFormat } from './tickets.service';
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
+const OLLAMA_URL   = process.env.OLLAMA_URL ?? '';
 
-// Your local Ollama server via ngrok (free, unlimited, runs on your PC)
-const OLLAMA_URL   = process.env.OLLAMA_URL ?? '';  // set OLLAMA_URL in Railway env vars
-
-// Try models in order — each has its own separate TPD quota
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',        // best quality, try first
-  'llama-3.1-8b-instant',           // separate quota, fast fallback
-  'meta-llama/llama-4-scout-17b-16e-instruct', // large separate quota
-  'mistral-saba-24b',               // another separate quota
-  'qwen-qwq-32b',                   // another separate quota
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'mistral-saba-24b',
+  'qwen-qwq-32b',
 ];
 
 const SYSTEM_PROMPT = `You are an airline e-ticket parser for a travel agency.
@@ -32,60 +29,7 @@ Each object must have exactly these fields:
 }
 If no tickets found return [].`;
 
-async function tryModel(
-  model: string,
-  body: string,
-  log: (msg: string) => void
-): Promise<string | null> {
-  log(`AI EXTRACTOR: Trying model ${model}...`);
-
-  let response: Response;
-  try {
-    response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens:  2000,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          // Send up to 12000 chars — enough for large multi-passenger emails
-          { role: 'user',   content: body.slice(0, 12000) },
-        ],
-      }),
-    });
-  } catch (err: any) {
-    log(`AI EXTRACTOR: Network error on ${model} — ${err.message}`);
-    return null;
-  }
-
-  if (response.status === 429) {
-    const errText = await response.text();
-    // Extract retry-after if present
-    const retryMatch = errText.match(/try again in ([^\s.]+)/i);
-    const retryIn = retryMatch ? ` (retry in ${retryMatch[1]})` : '';
-    log(`AI EXTRACTOR: ${model} rate-limited${retryIn} — trying next model...`);
-    return null; // signal to try next model
-  }
-
-  if (!response.ok) {
-    log(`AI EXTRACTOR: ${model} error ${response.status} — ${await response.text()}`);
-    return null;
-  }
-
-  const json = await response.json() as any;
-  return json?.choices?.[0]?.message?.content ?? null;
-}
-
-
-async function tryOllama(
-  body: string,
-  log: (msg: string) => void
-): Promise<string | null> {
+async function tryOllama(body: string, log: (msg: string) => void): Promise<string | null> {
   if (!OLLAMA_URL) return null;
   log('AI EXTRACTOR: Trying local Ollama (llama3.1:8b)...');
   try {
@@ -102,10 +46,7 @@ async function tryOllama(
         ],
       }),
     });
-    if (!response.ok) {
-      log(`AI EXTRACTOR: Ollama error ${response.status}`);
-      return null;
-    }
+    if (!response.ok) { log(`AI EXTRACTOR: Ollama error ${response.status}`); return null; }
     const json = await response.json() as any;
     const text = json?.choices?.[0]?.message?.content ?? null;
     if (text) log('AI EXTRACTOR: Got response from Ollama');
@@ -116,35 +57,63 @@ async function tryOllama(
   }
 }
 
-export async function extractWithGroq(
-  body: string,
-  log: (msg: string) => void
-): Promise<ExtractedTicket[]> {
-  if (!GROQ_API_KEY) {
-    log('AI EXTRACTOR: GROQ_API_KEY is not set — skipping AI extraction');
-    return [];
+async function tryGroqModel(model: string, body: string, log: (msg: string) => void): Promise<string | null> {
+  log(`AI EXTRACTOR: Trying model ${model}...`);
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_tokens: 2000,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user',   content: body.slice(0, 12000) },
+        ],
+      }),
+    });
+    if (response.status === 429) {
+      const errText = await response.text();
+      const retryMatch = errText.match(/try again in ([^\s.]+)/i);
+      const retryIn = retryMatch ? ` (retry in ${retryMatch[1]})` : '';
+      log(`AI EXTRACTOR: ${model} rate-limited${retryIn} — trying next model...`);
+      return null;
+    }
+    if (!response.ok) {
+      log(`AI EXTRACTOR: ${model} error ${response.status} — ${await response.text()}`);
+      return null;
+    }
+    const json = await response.json() as any;
+    const text = json?.choices?.[0]?.message?.content ?? null;
+    if (text) log(`AI EXTRACTOR: Got response from ${model}`);
+    return text;
+  } catch (err: any) {
+    log(`AI EXTRACTOR: Network error on ${model} — ${err.message}`);
+    return null;
   }
+}
 
+export async function extractWithGroq(body: string, log: (msg: string) => void): Promise<ExtractedTicket[]> {
   let raw: string | null = null;
 
-  // Try Ollama first (free, unlimited, runs on your PC)
+  // 1. Try Ollama first (free, unlimited, your PC)
   raw = await tryOllama(body, log);
-  if (raw) {
-    log('AI EXTRACTOR: Ollama succeeded');
-  }
 
+  // 2. Fall back to Groq models
   if (!raw) {
-    // Try each Groq model until one works
+    if (!GROQ_API_KEY) {
+      log('AI EXTRACTOR: GROQ_API_KEY not set and Ollama unavailable — cannot extract');
+      return [];
+    }
     for (const model of GROQ_MODELS) {
-    raw = await tryModel(model, body, log);
-    if (raw !== null) {
-      log(`AI EXTRACTOR: Got response from ${model}`);
-      break;
+      raw = await tryGroqModel(model, body, log);
+      if (raw) break;
     }
   }
 
-  if (raw === null) {
-    log('AI EXTRACTOR: All Groq models are rate-limited. Daily quota exhausted — try again tomorrow or upgrade Groq plan.');
+  if (!raw) {
+    log('AI EXTRACTOR: All providers exhausted — try again later.');
     return [];
   }
 
@@ -163,17 +132,17 @@ export async function extractWithGroq(
   log(`AI EXTRACTOR: Extracted ${parsed.length} record(s)`);
 
   return parsed.map((r: any): ExtractedTicket => ({
-    ticketNumber:        String(r.ticketNumber   ?? ''),
-    passengerName:       String(r.passengerName  ?? ''),
-    pnr:                 String(r.pnr            ?? ''),
-    airline:             String(r.airline        ?? ''),
-    itinerary:           String(r.itinerary      ?? ''),
-    departureDate:       r.departureDate ? new Date(r.departureDate) : null,
-    arriveDate:          r.arriveDate    ? new Date(r.arriveDate)    : null,
-    airFare:             typeof r.airFare === 'number' ? r.airFare   : null,
-    ttc:                 typeof r.ttc    === 'number'  ? r.ttc       : null,
-    agency:              '',
-    detectedAgencyName:  '',
-    format:              'UNKNOWN' as EmailFormat,
+    ticketNumber:       String(r.ticketNumber  ?? ''),
+    passengerName:      String(r.passengerName ?? ''),
+    pnr:                String(r.pnr           ?? ''),
+    airline:            String(r.airline       ?? ''),
+    itinerary:          String(r.itinerary     ?? ''),
+    departureDate:      r.departureDate ? new Date(r.departureDate) : null,
+    arriveDate:         r.arriveDate    ? new Date(r.arriveDate)    : null,
+    airFare:            typeof r.airFare === 'number' ? r.airFare : null,
+    ttc:                typeof r.ttc    === 'number'  ? r.ttc     : null,
+    agency:             '',
+    detectedAgencyName: '',
+    format:             'UNKNOWN' as EmailFormat,
   }));
 }
