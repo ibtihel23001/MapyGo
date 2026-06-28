@@ -174,10 +174,8 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
   fileLogger.section(`EMAIL IMPORT STARTED — Agency ${agencyId} (${agency?.slug ?? 'unknown'})`);
   fileLogger.log(`Config: host=${cfg.imapHost} port=${cfg.imapPort} user=${cfg.emailAddress}`);
 
-  // Only fetch emails newer than the last successful sync (saves Groq tokens)
-  const sinceDate = cfg.lastSync
-    ? new Date(cfg.lastSync.getTime() - 60 * 60 * 1000) // 1hr overlap to avoid missing edge cases
-    : (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; })();
+  // Always look back 90 days; the slice(-20) cap keeps token usage low
+  const sinceDate = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; })();
 
   let emails: RawEmail[];
   try {
