@@ -181,9 +181,15 @@ export async function importFromEmailBody(
       log(`  INSERTED: ticket="${rec.ticketNumber}" | passenger="${rec.passengerName}"`);
       result.inserted++;
     } catch (err: any) {
-      const msg = `Insert error for ${rec.ticketNumber}: ${err?.message ?? String(err)}`;
-      result.errors.push(msg);
-      log(`  ERROR: ${msg}`);
+      // P2002 = Prisma unique constraint violation → ticket already exists, just skip it
+      if (err?.code === 'P2002') {
+        log(`  SKIPPED (duplicate): ticket="${rec.ticketNumber}"`);
+        result.skipped++;
+      } else {
+        const msg = `Insert error for ${rec.ticketNumber}: ${err?.message ?? String(err)}`;
+        result.errors.push(msg);
+        log(`  ERROR: ${msg}`);
+      }
     }
   }
 
