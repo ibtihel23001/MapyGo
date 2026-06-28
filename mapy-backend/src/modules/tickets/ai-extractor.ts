@@ -35,11 +35,13 @@ async function tryOllama(body: string, log: (msg: string) => void): Promise<stri
   if (!OLLAMA_URL) return null;
   log('AI EXTRACTOR: Trying local Ollama (llama3.1:8b)...');
   try {
-    const response = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+    const ollamaEndpoint = `${OLLAMA_URL}/v1/chat/completions`;
+    const response = await fetch(ollamaEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',  // fix 403 from ngrok
+        'ngrok-skip-browser-warning': '1',
+        'User-Agent': 'MapyGoExtractor/1.0',
       },
       body: JSON.stringify({
         model: 'llama3.1:8b',
@@ -133,7 +135,9 @@ export async function extractWithGroq(body: string, log: (msg: string) => void):
 
   let parsed: any[];
   try {
-    const clean = raw.replace(/```json|```/g, '').trim();
+    // Strip <think>...</think> blocks from reasoning models (e.g. qwen3.6)
+    const noThink = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const clean = noThink.replace(/```json|```/g, '').trim();
     parsed = JSON.parse(clean);
     if (!Array.isArray(parsed)) parsed = [];
   } catch {
