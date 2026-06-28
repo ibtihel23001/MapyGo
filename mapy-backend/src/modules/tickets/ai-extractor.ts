@@ -5,9 +5,11 @@ const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
 
 // Try models in order — each has its own separate TPD quota
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',   // best quality, try first
-  'llama-3.1-8b-instant',      // separate quota, fast fallback
-  'gemma2-9b-it',              // another separate quota
+  'llama-3.3-70b-versatile',        // best quality, try first
+  'llama-3.1-8b-instant',           // separate quota, fast fallback
+  'meta-llama/llama-4-scout-17b-16e-instruct', // large separate quota
+  'mistral-saba-24b',               // another separate quota
+  'qwen-qwq-32b',                   // another separate quota
 ];
 
 const SYSTEM_PROMPT = `You are an airline e-ticket parser for a travel agency.
