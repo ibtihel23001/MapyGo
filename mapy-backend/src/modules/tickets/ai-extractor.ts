@@ -136,8 +136,16 @@ export async function extractWithGroq(body: string, log: (msg: string) => void):
   let parsed: any[];
   try {
     // Strip <think>...</think> blocks from reasoning models (e.g. qwen3.6)
-    const noThink = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    const clean = noThink.replace(/```json|```/g, '').trim();
+    // Also handle unclosed <think> blocks by taking only text after last </think>
+    let stripped = raw;
+    if (stripped.includes('</think>')) {
+      stripped = stripped.substring(stripped.lastIndexOf('</think>') + '</think>'.length);
+    } else if (stripped.includes('<think>')) {
+      // No closing tag - find the [ or { that starts the JSON
+      const jsonStart = stripped.search(/[\[{]/);
+      if (jsonStart !== -1) stripped = stripped.substring(jsonStart);
+    }
+    const clean = stripped.replace(/```json|```/g, '').trim();
     parsed = JSON.parse(clean);
     if (!Array.isArray(parsed)) parsed = [];
   } catch {
