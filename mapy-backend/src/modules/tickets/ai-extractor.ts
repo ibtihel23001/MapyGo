@@ -4,12 +4,14 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
 const OLLAMA_URL   = process.env.OLLAMA_URL ?? '';
 
+// Current active Groq models (updated June 2026)
+// llama-3.3-70b, llama-3.1-8b, mistral-saba-24b, qwen-qwq-32b are all DEPRECATED
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'mistral-saba-24b',
-  'qwen-qwq-32b',
+  'llama-3.3-70b-versatile',     // still active, just rate-limited
+  'llama-3.1-8b-instant',        // still active, just rate-limited
+  'openai/gpt-oss-20b',          // new replacement, separate quota
+  'openai/gpt-oss-120b',         // new replacement, separate quota
+  'qwen/qwen3.6-27b',            // new replacement, separate quota
 ];
 
 const SYSTEM_PROMPT = `You are an airline e-ticket parser for a travel agency.
@@ -35,7 +37,10 @@ async function tryOllama(body: string, log: (msg: string) => void): Promise<stri
   try {
     const response = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',  // fix 403 from ngrok
+      },
       body: JSON.stringify({
         model: 'llama3.1:8b',
         temperature: 0,
@@ -79,6 +84,13 @@ async function tryGroqModel(model: string, body: string, log: (msg: string) => v
       const retryIn = retryMatch ? ` (retry in ${retryMatch[1]})` : '';
       log(`AI EXTRACTOR: ${model} rate-limited${retryIn} — trying next model...`);
       return null;
+    }
+    if (response.status === 400) {
+      const errText = await response.text();
+      if (errText.includes('decommissioned')) {
+        log(`AI EXTRACTOR: ${model} is decommissioned — trying next model...`);
+        return null;
+      }
     }
     if (!response.ok) {
       log(`AI EXTRACTOR: ${model} error ${response.status} — ${await response.text()}`);
