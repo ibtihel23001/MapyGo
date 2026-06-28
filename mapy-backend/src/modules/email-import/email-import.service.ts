@@ -127,12 +127,14 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
           { subject: 'QSF' },
           { subject: 'ALG' },
         ],
-        since,
+        since: sinceDate,
       });
 
       if (!uids || uids.length === 0) return emails;
 
-      const toFetch = uids.slice(-100);
+      // ⚠️ Limit to last 20 emails to avoid burning Groq token quota.
+      // Emails are sorted oldest→newest; slice(-20) takes the most recent ones.
+      const toFetch = uids.slice(-20);
 
       for await (const msg of client.fetch(toFetch, { source: true })) {
         try {
@@ -171,6 +173,11 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
 
   fileLogger.section(`EMAIL IMPORT STARTED — Agency ${agencyId} (${agency?.slug ?? 'unknown'})`);
   fileLogger.log(`Config: host=${cfg.imapHost} port=${cfg.imapPort} user=${cfg.emailAddress}`);
+
+  // Only fetch emails newer than the last successful sync (saves Groq tokens)
+  const sinceDate = cfg.lastSync
+    ? new Date(cfg.lastSync.getTime() - 60 * 60 * 1000) // 1hr overlap to avoid missing edge cases
+    : (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; })();
 
   let emails: RawEmail[];
   try {
