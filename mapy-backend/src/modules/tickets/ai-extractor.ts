@@ -3,6 +3,9 @@ import type { ExtractedTicket, EmailFormat } from './tickets.service';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
 
+// Your local Ollama server via ngrok (free, unlimited, runs on your PC)
+const OLLAMA_URL   = process.env.OLLAMA_URL ?? '';  // set OLLAMA_URL in Railway env vars
+
 // Try models in order — each has its own separate TPD quota
 const GROQ_MODELS = [
   'llama-3.3-70b-versatile',        // best quality, try first
@@ -78,6 +81,41 @@ async function tryModel(
   return json?.choices?.[0]?.message?.content ?? null;
 }
 
+
+async function tryOllama(
+  body: string,
+  log: (msg: string) => void
+): Promise<string | null> {
+  if (!OLLAMA_URL) return null;
+  log('AI EXTRACTOR: Trying local Ollama (llama3.1:8b)...');
+  try {
+    const response = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama3.1:8b',
+        temperature: 0,
+        max_tokens: 2000,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user',   content: body.slice(0, 12000) },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      log(`AI EXTRACTOR: Ollama error ${response.status}`);
+      return null;
+    }
+    const json = await response.json() as any;
+    const text = json?.choices?.[0]?.message?.content ?? null;
+    if (text) log('AI EXTRACTOR: Got response from Ollama');
+    return text;
+  } catch (err: any) {
+    log(`AI EXTRACTOR: Ollama unreachable — ${err.message}`);
+    return null;
+  }
+}
+
 export async function extractWithGroq(
   body: string,
   log: (msg: string) => void
@@ -89,8 +127,15 @@ export async function extractWithGroq(
 
   let raw: string | null = null;
 
-  // Try each model until one works
-  for (const model of GROQ_MODELS) {
+  // Try Ollama first (free, unlimited, runs on your PC)
+  raw = await tryOllama(body, log);
+  if (raw) {
+    log('AI EXTRACTOR: Ollama succeeded');
+  }
+
+  if (!raw) {
+    // Try each Groq model until one works
+    for (const model of GROQ_MODELS) {
     raw = await tryModel(model, body, log);
     if (raw !== null) {
       log(`AI EXTRACTOR: Got response from ${model}`);
