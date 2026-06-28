@@ -50,6 +50,7 @@ interface ImapConfig {
   password: string;
   host?: string;
   port?: number;
+  since?: Date;
 }
 
 interface RawEmail {
@@ -110,8 +111,7 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
   try {
     const lock = await client.getMailboxLock('INBOX');
     try {
-      const since = new Date();
-      since.setDate(since.getDate() - 90);
+      const since = config.since ?? (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; })();
 
       const uids = await client.search({
         or: [
@@ -127,7 +127,7 @@ async function fetchEmailsFromImap(config: ImapConfig): Promise<RawEmail[]> {
           { subject: 'QSF' },
           { subject: 'ALG' },
         ],
-        since: sinceDate,
+        since,
       });
 
       if (!uids || uids.length === 0) return emails;
@@ -186,6 +186,7 @@ export async function importTicketsFromEmail(agencyId: number): Promise<ImportRe
       password: cfg.emailPassword,
       host: cfg.imapHost ?? undefined,
       port: cfg.imapPort ?? undefined,
+      since: sinceDate,
     });
   } catch (err: any) {
     const msg = err.message ?? String(err);
